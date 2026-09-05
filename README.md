@@ -48,6 +48,8 @@ an addition, not a dependency. Turn it on and your log follows you between
 your phone and your laptop, and stops being one browser-cache-clear away
 from gone.
 
+**Step-by-step walkthrough, including the traps: [SETUP.md](SETUP.md).**
+
 1. Create a free project at [supabase.com](https://supabase.com). No card
    required.
 2. In the dashboard open **SQL Editor**, paste all of
@@ -61,7 +63,11 @@ from gone.
    - **Once, for every device** — put them in [`config.js`](config.js) and
      push. A filled-in `config.js` always wins over anything typed on a
      device, so there is one source of truth.
-5. In the app: **Setup → Sync**, enter your email, and type the six-digit
+5. In Supabase, **Authentication → Emails → Magic Link**, put
+   `{{ .Token }}` in the template. The stock template sends a *link*, and
+   the app asks for a *code* — a link has to open in the browser that
+   requested it, which on iOS is routinely the wrong one.
+6. In the app: **Setup → Sync**, enter your email, and type the six-digit
    code that arrives. Repeat on your other devices with the same email.
 
 The setup form refuses a URL that isn't a project endpoint, and refuses
@@ -192,6 +198,7 @@ styles/app.css          self-contained tokens, light + dark
 sw.js                   offline shell. Only caches same-origin assets —
                         a cached sync response would be worse than none.
 supabase/schema.sql     tables, indexes, RLS policies
+SETUP.md                Supabase walkthrough
 tests/                  131 assertions
 ```
 

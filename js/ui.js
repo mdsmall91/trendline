@@ -346,7 +346,13 @@
           'maxlength="6" placeholder="123456"></label>' +
           '<button class="btn primary grow-0" id="authVerify">Verify</button></div>' +
           '<button class="btn ghost" id="authBack" style="margin-top:var(--s-2)">Use a different email</button>' +
-          (authMessage ? '<div class="note">' + esc(authMessage) + '</div>' : '');
+          (authMessage ? '<div class="note">' + esc(authMessage) + '</div>' : '') +
+          /* Supabase ships a Magic Link template by default, which sends a
+             link rather than a code. Without this hint the first sign-in
+             looks like a broken app instead of a one-line settings change. */
+          '<p class="hint">Got a <b>link</b> in the email instead of a code? In Supabase go to ' +
+          '<b>Authentication &rarr; Emails &rarr; Magic Link</b> and put <code>{{ .Token }}</code> ' +
+          'in the template. See SETUP.md.</p>';
       } else {
         body.innerHTML =
           '<p class="hint" style="margin:0 0 var(--s-3)">Sign in to sync this log across your devices. ' +
