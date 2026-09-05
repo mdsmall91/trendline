@@ -1,0 +1,43 @@
+{
+  "profile_id": "home_gym_msmall",
+  "weight_unit": "lb",
+  "_note": "What can actually be selected in this gym. Progression is only useful if it recommends a load that exists: 'add 5 lb' is meaningless when the next dumbbell up is ten pounds heavier.",
+
+  "dumbbell": {
+    "each_lb": [5, 10, 15, 25, 35],
+    "_note": "Per dumbbell. A bilateral lift holding two is double these; a one-arm row is the single value. The gap from 15 to 25 is a 67% jump on a single-arm lift, which is why reps have to carry progression across it.",
+    "pairs": true
+  },
+
+  "medicine_ball": {
+    "each_lb": [10, 15, 20, 25, 30, 35],
+    "_note": "Even 5 lb steps throughout, so this is the one implement here where a textbook small increment actually exists. Used by the slam, which is tracked in reps and is ballistic — progress it by load rather than by grinding out more reps."
+  },
+
+  "weight_plates": {
+    "total_available_lb": 225,
+    "_note": "Loaded onto the curl bar. Increments depend on which plates are on the rack; the bar's own weight is included in the logged load when known.",
+    "used_by": ["curl_bar"]
+  },
+
+  "hoist_free_bar": {
+    "bar_weight_lb": 25,
+    "confidence": "user_reported_approximate",
+    "_note": "Matt's estimate, not a measurement. It matters because a bar-only set is 25 lb rather than zero, so the first working load on a free-bar movement is not the stack number alone. Kept as a separate field rather than folded into logged loads: if the real figure turns out to be different, one number changes and no history has to be rewritten."
+  },
+
+  "hoist_weight_stack": {
+    "max_lb": 200,
+    "_note": "The number displayed on the stack. NOT comparable with dumbbell or plate pounds, and not comparable between cable positions — see mechanical_ratio.",
+    "mechanical_ratio": {
+      "hoist_free_bar": 1.0,
+      "hoist_high_cable": 1.0,
+      "hoist_low_cable": 0.5
+    },
+    "_ratio_note": "The bottom pulley splits the load, so 100 on the stack is about 50 lb of resistance at a low-cable handle. Stored loads keep the DISPLAYED stack number, because that is what gets set on the machine and what has to be reproduced next session. The ratio exists so effective load can be shown alongside it, and so a low-cable row is never compared against a high-cable pulldown as if the numbers meant the same thing."
+  },
+
+  "bodyweight": {
+    "_note": "Exercises with no equipment carry no external load. Progression there is reps first, then a harder variation — never endless reps."
+  }
+}
