@@ -134,12 +134,92 @@ var Sync = (function () {
      AUTH
      --------------------------------------------------------------- */
 
-  function cfg() {
-    return (typeof CONFIG !== 'undefined') ? CONFIG : { SUPABASE_URL: '', SUPABASE_ANON_KEY: '' };
+  var CONFIG_KEY = 'tl.config';
+
+  /* Config comes from config.js when it is filled in, and otherwise from
+     whatever was entered in the app. The in-app path exists so the whole
+     thing can be set up from a phone: editing a committed file is not a
+     reasonable thing to ask of someone standing in their kitchen.
+
+     Committed config wins, so once config.js is filled in it is the one
+     source of truth and a stale value typed on one device cannot quietly
+     override it. */
+  function localCfg() {
+    try {
+      var c = JSON.parse(localStorage.getItem(CONFIG_KEY) || 'null');
+      return (c && c.SUPABASE_URL && c.SUPABASE_ANON_KEY) ? c : null;
+    } catch (e) { return null; }
   }
+
+  function cfg() {
+    var committed = (typeof CONFIG !== 'undefined') ? CONFIG : null;
+    if (committed && committed.SUPABASE_URL && committed.SUPABASE_ANON_KEY) return committed;
+    return localCfg() || { SUPABASE_URL: '', SUPABASE_ANON_KEY: '' };
+  }
+
   function configured() {
     var c = cfg();
     return !!(c.SUPABASE_URL && c.SUPABASE_ANON_KEY);
+  }
+
+  function configSource() {
+    var committed = (typeof CONFIG !== 'undefined') ? CONFIG : null;
+    if (committed && committed.SUPABASE_URL && committed.SUPABASE_ANON_KEY) return 'file';
+    return localCfg() ? 'device' : 'none';
+  }
+
+  /* Is this the secret key rather than the publishable one?
+
+     Worth real effort to catch. The service role key bypasses Row Level
+     Security entirely, and pasting it into a page that ships to a phone
+     would hand every reader of the page full read/write on the database.
+     It is an easy mistake — the two keys sit next to each other in the
+     Supabase dashboard and look alike.
+
+     A substring check does not work: in the classic JWT format the role
+     is inside the base64 payload, so the literal text "service_role"
+     never appears in the key itself. It has to be decoded. */
+  function b64urlDecode(seg) {
+    var s = String(seg).replace(/-/g, '+').replace(/_/g, '/');
+    while (s.length % 4) s += '=';
+    if (typeof atob === 'function') return atob(s);
+    return Buffer.from(s, 'base64').toString('binary');
+  }
+
+  function isSecretKey(key) {
+    /* Newer Supabase key format is prefixed in the clear. */
+    if (/^sb_secret_/i.test(key)) return true;
+    if (/^sb_publishable_/i.test(key)) return false;
+
+    var parts = key.split('.');
+    if (parts.length === 3) {
+      try {
+        var claims = JSON.parse(b64urlDecode(parts[1]));
+        if (claims && claims.role) return claims.role === 'service_role';
+      } catch (e) { /* not a JWT we can read — fall through */ }
+    }
+    /* Last resort for a plain string that simply says what it is. */
+    return /service_role/i.test(key);
+  }
+
+  /* Rejects the two mistakes that otherwise surface as a confusing 401
+     twenty minutes later, or as a silent security hole. */
+  function setConfig(url, key) {
+    url = String(url || '').trim().replace(/\/+$/, '');
+    key = String(key || '').trim().replace(/\s+/g, '');
+    if (!/^https:\/\/[a-z0-9-]+\.supabase\.co$/i.test(url)) {
+      throw new Error('That should look like https://abcdefgh.supabase.co');
+    }
+    if (!key) throw new Error('Paste the anon / public key.');
+    if (isSecretKey(key)) {
+      throw new Error('That is the secret / service role key — it bypasses row security and must never go in the app. Use the anon (publishable) key.');
+    }
+    try { localStorage.setItem(CONFIG_KEY, JSON.stringify({ SUPABASE_URL: url, SUPABASE_ANON_KEY: key })); }
+    catch (e) { throw new Error('Could not save the settings on this device.'); }
+  }
+
+  function clearConfig() {
+    try { localStorage.removeItem(CONFIG_KEY); } catch (e) {}
   }
 
   function readAuth() {
@@ -391,8 +471,11 @@ var Sync = (function () {
     pickWinner: pickWinner, mergeCollection: mergeCollection, collectDirty: collectDirty,
     toRow: toRow, fromRow: fromRow, settingsToRow: settingsToRow, settingsFromRow: settingsFromRow,
     maxSyncedAt: maxSyncedAt, snake: snake, camel: camel, TABLE_NAMES: TABLE_NAMES,
+    isSecretKey: isSecretKey,
     /* stateful */
-    configured: configured, signedIn: signedIn, account: account,
+    configured: configured, configSource: configSource,
+    setConfig: setConfig, clearConfig: clearConfig,
+    signedIn: signedIn, account: account,
     requestCode: requestCode, verifyCode: verifyCode, signOut: signOut,
     run: run, pendingCount: pendingCount
   };

@@ -55,9 +55,22 @@ from gone.
    five tables, the indexes, and the row-level security policies.
 3. Open **Project Settings → API** and copy the **Project URL** and the
    **anon / public** key.
-4. Paste both into [`config.js`](config.js) and reload.
+4. Give the app those two values, either way:
+   - **From your phone** — open **Setup → Sync** and paste them into the
+     form. Stored on that device only. Nothing to edit, nothing to deploy.
+   - **Once, for every device** — put them in [`config.js`](config.js) and
+     push. A filled-in `config.js` always wins over anything typed on a
+     device, so there is one source of truth.
 5. In the app: **Setup → Sync**, enter your email, and type the six-digit
    code that arrives. Repeat on your other devices with the same email.
+
+The setup form refuses a URL that isn't a project endpoint, and refuses
+the **secret / service role key** — that one bypasses Row Level Security,
+and putting it in a page that ships to a phone would hand every reader of
+the page the whole database. The two keys sit next to each other in the
+dashboard and look alike, so the check decodes the token and reads its
+`role` claim rather than matching on text (in the JWT format the words
+`service_role` never actually appear in the key).
 
 **The anon key is safe to commit.** It is a publishable key that identifies
 the project; it does not grant access to anything. Row Level Security is
@@ -168,7 +181,8 @@ number you stop trusting in week three.
 
 ```
 index.html              shell — five panels
-config.js               your Supabase URL + anon key (empty = sync off)
+config.js               your Supabase URL + anon key (empty = sync off,
+                        and it can be set in the app instead)
 js/core.js              the engine. Pure functions, no DOM, no storage.
 js/store.js             local-first storage, v1 migration, dirty tracking
 js/sync.js              merge logic + Supabase REST/auth over plain fetch
@@ -178,14 +192,14 @@ styles/app.css          self-contained tokens, light + dark
 sw.js                   offline shell. Only caches same-origin assets —
                         a cached sync response would be worse than none.
 supabase/schema.sql     tables, indexes, RLS policies
-tests/                  123 assertions
+tests/                  131 assertions
 ```
 
 ## Tests
 
 ```
 node tests/tests.js         # 67 — the engine
-node tests/sync-tests.js    # 56 — merge logic and the v1 migration
+node tests/sync-tests.js    # 64 — merge logic, migration, key safety
 ```
 
 Or open `tests/tests.html` and `tests/sync-tests.html` in a browser.

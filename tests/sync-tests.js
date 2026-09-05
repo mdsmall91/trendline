@@ -242,6 +242,33 @@
     catch (e) { return false; }
   })());
 
+  /* ---------- secret-key detection ----------
+     The service role key bypasses Row Level Security, so shipping one to
+     a phone would hand every reader of the page the whole database. The
+     role lives inside the base64 JWT payload, so a substring check on the
+     key text never sees it — these keys are shaped like the real ones. */
+  function jwt(payload) {
+    function b64(o) {
+      var s = (typeof Buffer !== 'undefined')
+        ? Buffer.from(JSON.stringify(o)).toString('base64')
+        : btoa(JSON.stringify(o));
+      return s.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    }
+    return b64({ alg: 'HS256', typ: 'JWT' }) + '.' + b64(payload) + '.sig';
+  }
+  check('service role JWT is caught', Sync.isSecretKey(jwt({ role: 'service_role', iss: 'supabase' })) === true);
+  check('anon JWT is allowed', Sync.isSecretKey(jwt({ role: 'anon', iss: 'supabase' })) === false);
+  check('the literal text is not in a service role JWT',
+    jwt({ role: 'service_role' }).indexOf('service_role') === -1,
+    'a substring check would have been enough, so this test proves nothing');
+  check('new-style secret key is caught', Sync.isSecretKey('sb_secret_abc123') === true);
+  check('new-style publishable key is allowed', Sync.isSecretKey('sb_publishable_abc123') === false);
+  check('a plain string naming itself is caught', Sync.isSecretKey('my service_role key') === true);
+  check('garbage is not treated as secret', Sync.isSecretKey('not-a-jwt') === false);
+  check('malformed jwt does not throw', (function () {
+    try { Sync.isSecretKey('a.b.c'); return true; } catch (e) { return false; }
+  })());
+
   var summary = { passes: passes, failures: failures.length, detail: failures };
   root.__syncResults = summary;
   if (typeof document !== 'undefined') {

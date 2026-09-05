@@ -321,10 +321,18 @@
 
     if (!Sync.configured()) {
       body.innerHTML =
-        '<p class="hint" style="margin:0">Sync is off. Everything works and stays on this device.</p>' +
-        '<div class="note plain">To sync across devices, create a free Supabase project, run ' +
-        '<code>supabase/schema.sql</code> in its SQL editor, and paste the project URL and anon key ' +
-        'into <code>config.js</code>. Setup is in the README — about five minutes, no card needed.</div>';
+        '<p class="hint" style="margin:0 0 var(--s-3)">Sync is off. Everything works and stays on this device.</p>' +
+        '<div class="note plain">Create a free Supabase project, run <code>supabase/schema.sql</code> ' +
+        'in its SQL editor, then paste the two values from <b>Project Settings &rarr; API</b> below. ' +
+        'No credit card. Full steps are in the README.</div>' +
+        '<label class="field" style="margin-top:var(--s-4)"><span>Project URL</span>' +
+        '<input type="text" id="cfgUrl" inputmode="url" autocapitalize="off" autocorrect="off" ' +
+        'spellcheck="false" placeholder="https://abcdefgh.supabase.co"></label>' +
+        '<label class="field"><span>Anon / public key</span>' +
+        '<textarea id="cfgKey" rows="3" autocapitalize="off" autocorrect="off" spellcheck="false" ' +
+        'placeholder="eyJhbGciOi…"></textarea></label>' +
+        '<button class="btn primary" id="cfgSave">Turn on sync</button>' +
+        (authMessage ? '<div class="note">' + esc(authMessage) + '</div>' : '');
       return;
     }
 
@@ -368,7 +376,12 @@
       '<div class="row" style="margin-top:var(--s-4);flex-wrap:wrap">' +
       '<button class="btn primary" id="syncNow"' + (syncing ? ' disabled' : '') + '>' +
       (syncing ? 'Syncing…' : 'Sync now') + '</button>' +
-      '<button class="btn grow-0" id="signOut">Sign out</button></div>';
+      '<button class="btn grow-0" id="signOut">Sign out</button></div>' +
+      (Sync.configSource() === 'device'
+        ? '<p class="hint">Project details were entered on this device. Put them in ' +
+          '<code>config.js</code> and they apply everywhere automatically. ' +
+          '<button class="btn ghost" id="cfgClear" style="padding:0 4px">Forget them</button></p>'
+        : '');
   }
 
   function renderSyncPill() {
@@ -664,6 +677,21 @@
       authStage = 'idle'; authMessage = ''; renderAccount();
     } else if (t.closest('#syncNow')) {
       doSync('manual');
+    } else if (t.closest('#cfgSave')) {
+      try {
+        Sync.setConfig($('cfgUrl').value, $('cfgKey').value);
+        authMessage = '';
+        render();
+      } catch (e) {
+        authMessage = String(e.message || e);
+        renderAccount();
+      }
+    } else if (t.closest('#cfgClear')) {
+      if (!confirm('Forget the Supabase project details on this device? You will be signed out of sync.')) return;
+      Sync.signOut();
+      Sync.clearConfig();
+      authStage = 'idle'; authEmail = ''; authMessage = '';
+      render();
     } else if (t.closest('#signOut')) {
       if (!confirm('Sign out? Your data stays in the cloud and on this device.')) return;
       Sync.signOut();
