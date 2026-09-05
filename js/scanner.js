@@ -73,13 +73,20 @@ var Scanner = (function () {
 
   /* Only the retail formats. Narrowing the set makes each frame
      cheaper to decode and stops a QR code on the same package from
-     winning the race against the barcode you meant to scan. */
+     winning the race against the barcode you meant to scan.
+
+     UPC_EAN_EXTENSION is deliberately absent: it matches the 2- and
+     5-digit supplements printed beside a barcode, never the barcode
+     itself, so it can only ever produce a wrong read. */
   function formats(L) {
     var F = L.Html5QrcodeSupportedFormats;
     if (!F) return undefined;
-    return [F.EAN_13, F.EAN_8, F.UPC_A, F.UPC_E, F.UPC_EAN_EXTENSION].filter(function (x) {
-      return x !== undefined;
+    var want = [F.EAN_13, F.EAN_8, F.UPC_A, F.UPC_E].filter(function (x) {
+      return x !== undefined && x !== null;
     });
+    /* An empty or partial list would silently narrow the scanner to
+       nothing. Better to support everything than to support none. */
+    return want.length === 4 ? want : undefined;
   }
 
   /* Start the camera into `elementId`. `cb(err, code)` fires once:
@@ -102,16 +109,50 @@ var Scanner = (function () {
       });
 
       return instance.start(
-        { facingMode: 'environment' },
+        {
+          facingMode: 'environment'
+        },
         {
           fps: 10,
-          /* A wide, short box: retail barcodes are wide and short, and
-             a square reticle invites people to frame it wrongly. */
+
+          /* NO aspectRatio.
+
+             Forcing 16:9 on a phone held in portrait is what broke the
+             first version of this: the library lays out its scan region
+             against the ratio it was told rather than the one the camera
+             actually produced, so the decoded area sits somewhere other
+             than the part of the frame the person is aiming. The camera
+             looked alive and nothing ever read. Letting the stream
+             report its own shape costs nothing and removes the whole
+             class of problem.
+
+             qrbox is a fraction of the REAL frame, clamped so it can
+             never exceed it — an oversized box is the other way this
+             silently stops decoding. Wide and short, because retail
+             barcodes are wide and short and a square reticle invites
+             people to frame it wrongly. */
           qrbox: function (w, h) {
-            var width = Math.max(160, Math.min(w * 0.85, 380));
-            return { width: width, height: Math.max(110, Math.min(h * 0.45, 180)) };
+            return {
+              width: Math.max(120, Math.floor(w * 0.9)),
+              height: Math.max(80, Math.floor(h * 0.55))
+            };
           },
-          aspectRatio: 1.777
+
+          /* Continuous autofocus. A barcode 15cm from the lens is
+             exactly where a phone likes to hunt, and a hunting camera
+             produces blur that no decoder recovers from. Passed as a
+             plain constraint because Safari ignores what it does not
+             understand rather than failing the getUserMedia call. */
+          videoConstraints: {
+            facingMode: 'environment',
+            focusMode: 'continuous',
+            advanced: [{ focusMode: 'continuous' }]
+          },
+
+          /* Some packages get printed mirrored on curved surfaces, and
+             flipping costs one extra pass on a frame that already
+             failed. */
+          disableFlip: false
         },
         function (text) {
           var fire = onDone;
@@ -152,9 +193,49 @@ var Scanner = (function () {
 
   function running() { return !!instance; }
 
+  /* Decode a still photo instead of the live stream.
+
+     Live scanning asks the camera to hold focus on a small, high
+     contrast pattern while a hand shakes; a photo lets the phone do
+     what it is actually good at — focus once, expose properly, and
+     hand over a sharp full-resolution frame. On iOS this is markedly
+     more reliable than the video path, and it is the answer to "the
+     camera is on but nothing happens".
+
+     The live scanner must be stopped first: html5-qrcode refuses to
+     scan a file into an element that is mid-stream, and the failure
+     is an unhelpful internal error rather than a clear one. */
+  function scanImage(file, elementId) {
+    if (!file) return Promise.reject(new Error('No photo to read.'));
+    return stop().then(function () {
+      return loadLib();
+    }).then(function (L) {
+      var reader = new L.Html5Qrcode(elementId, {
+        formatsToSupport: formats(L),
+        verbose: false
+      });
+      /* showImage:false — the overlay is closing, and painting the
+         photo into it first is a flash of the wrong thing. */
+      return reader.scanFile(file, false).then(function (text) {
+        try { reader.clear(); } catch (e) {}
+        return text;
+      }).catch(function (e) {
+        try { reader.clear(); } catch (e2) {}
+        var msg = String((e && e.message) || e);
+        /* The library's miss message is a stack trace's worth of noise
+           for what is really just "I could not see a barcode". */
+        if (/No MultiFormat Readers|NotFoundException|No barcode or QR/i.test(msg)) {
+          throw new Error('No barcode found in that photo. Fill the frame with the bars, ' +
+            'hold steady, and keep it about a hand span away.');
+        }
+        throw new Error(msg);
+      });
+    });
+  }
+
   return {
     supported: supported, unavailableReason: unavailableReason,
-    start: start, stop: stop, running: running
+    start: start, stop: stop, running: running, scanImage: scanImage
   };
 })();
 

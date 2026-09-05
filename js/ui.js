@@ -14,7 +14,7 @@
   /* Bumped by hand on each deploy, and shown under Setup → Version.
      Its only job is to let "it still looks old" be answered with a
      number instead of a guess. Keep it in step with CACHE in sw.js. */
-  var BUILD = '2026-09-05.6';
+  var BUILD = '2026-09-05.7';
   var day = WL.todayKey();
   var range = 30;
   var foodFilterText = '';
@@ -974,7 +974,15 @@
       $('scanStatus').textContent = 'Read ' + code + ' — looking it up…';
       resolveBarcode(code);
     }).then(function () {
-      if (Scanner.running()) $('scanStatus').textContent = 'Point the camera at the barcode.';
+      /* Specific, because "point the camera at the barcode" is what
+         everyone is already doing when it fails. The bars need to fill
+         the width and be about a hand span away — closer than feels
+         right, and the usual reason nothing reads. */
+      if (Scanner.running()) {
+        $('scanStatus').textContent = 'Fill the width with the bars, about a hand span away, ' +
+          'and hold still. If nothing happens in a few seconds, take a photo instead — ' +
+          'the camera focuses better for a photo than it does while streaming.';
+      }
     });
   }
 
@@ -1002,6 +1010,26 @@
 
   $('scanBarcode').addEventListener('click', openScanner);
   $('scanClose').addEventListener('click', closeScanner);
+
+  /* The still-photo path. Also the escape hatch when the live scanner
+     is running but not reading — the phone focuses properly for a
+     photo in a way it does not while streaming. */
+  $('photoBarcode').addEventListener('click', function () {
+    $('photoBarcodeFile').click();
+  });
+  $('photoBarcodeFile').addEventListener('change', function () {
+    var file = $('photoBarcodeFile').files[0];
+    $('photoBarcodeFile').value = '';       /* so the same shot can be retried */
+    if (!file) return;
+    $('scanStatus').textContent = 'Reading the photo…';
+    Scanner.scanImage(file, 'scanView').then(function (code) {
+      $('scanStatus').textContent = 'Read ' + code + ' — looking it up…';
+      resolveBarcode(code);
+    }).catch(function (e) {
+      /* Stays open: the whole point is to let them line up another shot. */
+      $('scanStatus').textContent = String(e.message || e);
+    });
+  });
   $('manualBarcodeGo').addEventListener('click', function () {
     var v = $('manualBarcode').value.trim();
     if (v) resolveBarcode(v);

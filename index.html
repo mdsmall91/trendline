@@ -396,11 +396,15 @@
     </div>
     <div class="scanner-view" id="scanView"></div>
     <div class="hint" id="scanStatus">Starting the camera…</div>
+    <div class="row" style="margin-bottom:var(--s-2)">
+      <button class="btn primary" id="photoBarcode">Take a photo instead</button>
+      <input type="file" id="photoBarcodeFile" accept="image/*" capture="environment" hidden>
+    </div>
     <div class="row">
       <label class="field" style="margin:0"><span class="sr">Barcode digits</span>
         <input type="text" id="manualBarcode" inputmode="numeric" autocomplete="off"
                placeholder="…or type the digits under the bars"></label>
-      <button class="btn primary grow-0" id="manualBarcodeGo">Look up</button>
+      <button class="btn grow-0" id="manualBarcodeGo">Look up</button>
     </div>
   </div>
 </div>
