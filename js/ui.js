@@ -13,7 +13,7 @@
   var day = WL.todayKey();
   var range = 30;
   var foodFilterText = '';
-  var authStage = 'idle';       /* idle | code | busy */
+  var authStage = 'idle';       /* idle | password | codeRequest | code */
   var authEmail = '';
   var authMessage = '';
   var syncing = false;
@@ -332,11 +332,14 @@
         '<textarea id="cfgKey" rows="3" autocapitalize="off" autocorrect="off" spellcheck="false" ' +
         'placeholder="eyJhbGciOi…"></textarea></label>' +
         '<button class="btn primary" id="cfgSave">Turn on sync</button>' +
-        (authMessage ? '<div class="note">' + esc(authMessage) + '</div>' : '');
+        '<div class="note" id="authMsg"' + (authMessage ? '' : ' hidden') + '>' + esc(authMessage) + '</div>';
       return;
     }
 
     if (!Sync.signedIn()) {
+      if (authStage === 'password' || authStage === 'idle' || authStage === 'busy') {
+        return renderPasswordForm(body);
+      }
       if (authStage === 'code') {
         body.innerHTML =
           '<p class="hint" style="margin:0 0 var(--s-3)">Six-digit code sent to <b>' + esc(authEmail) + '</b>.</p>' +
@@ -346,7 +349,7 @@
           'maxlength="6" placeholder="123456"></label>' +
           '<button class="btn primary grow-0" id="authVerify">Verify</button></div>' +
           '<button class="btn ghost" id="authBack" style="margin-top:var(--s-2)">Use a different email</button>' +
-          (authMessage ? '<div class="note">' + esc(authMessage) + '</div>' : '') +
+          '<div class="note" id="authMsg"' + (authMessage ? '' : ' hidden') + '>' + esc(authMessage) + '</div>' +
           /* Supabase ships a Magic Link template by default, which sends a
              link rather than a code. Without this hint the first sign-in
              looks like a broken app instead of a one-line settings change. */
@@ -355,15 +358,16 @@
           'in the template. See SETUP.md.</p>';
       } else {
         body.innerHTML =
-          '<p class="hint" style="margin:0 0 var(--s-3)">Sign in to sync this log across your devices. ' +
-          'No password — a one-time code by email.</p>' +
+          '<p class="hint" style="margin:0 0 var(--s-3)">A one-time code by email. This needs the ' +
+          'Supabase <b>Magic Link</b> template to contain <code>{{ .Token }}</code>; the stock ' +
+          'template sends a link instead.</p>' +
           '<div class="row">' +
           '<label class="field" style="margin:0"><span class="sr">Email</span>' +
           '<input type="email" id="authEmail" inputmode="email" autocomplete="email" ' +
           'placeholder="you@example.com" value="' + esc(authEmail) + '"></label>' +
-          '<button class="btn primary grow-0" id="authSend"' + (authStage === 'busy' ? ' disabled' : '') + '>' +
-          (authStage === 'busy' ? 'Sending…' : 'Send code') + '</button></div>' +
-          (authMessage ? '<div class="note">' + esc(authMessage) + '</div>' : '');
+          '<button class="btn primary grow-0" id="authSend">Send code</button></div>' +
+          '<button class="btn ghost" id="usePassword">Use a password instead</button>' +
+          '<div class="note" id="authMsg"' + (authMessage ? '' : ' hidden') + '>' + esc(authMessage) + '</div>';
       }
       return;
     }
@@ -388,6 +392,48 @@
           '<code>config.js</code> and they apply everywhere automatically. ' +
           '<button class="btn ghost" id="cfgClear" style="padding:0 4px">Forget them</button></p>'
         : '');
+  }
+
+  /* Show an error without re-rendering.
+
+     Re-rendering a form to show a message wipes everything already typed
+     in it — mistype a password and the email goes too, and in the setup
+     form a bad paste takes the long anon key with it. So the message gets
+     its own slot and only that slot changes. */
+  function setAuthMessage(text) {
+    authMessage = text || '';
+    var slot = $('authMsg');
+    if (!slot) { renderAccount(); return; }
+    slot.textContent = authMessage;
+    slot.hidden = !authMessage;
+  }
+
+  function setAuthBusy(busy) {
+    ['pwSignIn', 'pwSignUp', 'authSend', 'authVerify', 'cfgSave'].forEach(function (id) {
+      var b = $(id);
+      if (b) b.disabled = busy;
+    });
+  }
+
+  /* Password first. It works with no email configuration at all, which is
+     the difference between sync working tonight and sync waiting on a
+     dashboard setting. */
+  function renderPasswordForm(body) {
+    body.innerHTML =
+      '<p class="hint" style="margin:0 0 var(--s-3)">Sign in to sync across your devices. ' +
+      'Use the same account on each one.</p>' +
+      '<label class="field"><span>Email</span>' +
+      '<input type="email" id="pwEmail" inputmode="email" autocomplete="username" ' +
+      'autocapitalize="off" spellcheck="false" placeholder="you@example.com" value="' + esc(authEmail) + '"></label>' +
+      '<label class="field"><span>Password</span>' +
+      '<input type="password" id="pwPass" autocomplete="current-password" ' +
+      'placeholder="at least 6 characters"></label>' +
+      '<div class="row">' +
+      '<button class="btn primary" id="pwSignIn">Sign in</button>' +
+      '<button class="btn" id="pwSignUp">Create account</button>' +
+      '</div>' +
+      '<button class="btn ghost" id="useCode" style="margin-top:var(--s-2)">Email me a code instead</button>' +
+      '<div class="note" id="authMsg"' + (authMessage ? '' : ' hidden') + '>' + esc(authMessage) + '</div>';
   }
 
   function renderSyncPill() {
@@ -656,31 +702,51 @@
   /* account */
   $('accountBody').addEventListener('click', function (ev) {
     var t = ev.target;
-    if (t.closest('#authSend')) {
+    if (t.closest('#pwSignIn') || t.closest('#pwSignUp')) {
+      var creating = !!t.closest('#pwSignUp');
+      var em = ($('pwEmail').value || '').trim();
+      var pw = $('pwPass').value || '';
+      authEmail = em;   /* remembered so a later re-render keeps it */
+      if (!em || em.indexOf('@') < 0) { setAuthMessage('That does not look like an email address.'); return; }
+      if (pw.length < 6) { setAuthMessage('Password needs at least 6 characters.'); return; }
+      setAuthMessage(''); setAuthBusy(true);
+      (creating ? Sync.signUp(em, pw) : Sync.signInPassword(em, pw)).then(function () {
+        authStage = 'idle'; authMessage = '';
+        render();
+        doSync('sign-in');
+      }).catch(function (e) {
+        setAuthBusy(false);
+        setAuthMessage(String(e.message || e));
+      });
+    } else if (t.closest('#useCode')) {
+      authStage = 'codeRequest'; authMessage = ''; renderAccount();
+    } else if (t.closest('#usePassword')) {
+      authStage = 'password'; authMessage = ''; renderAccount();
+    } else if (t.closest('#authSend')) {
       var email = ($('authEmail').value || '').trim();
-      if (!email || email.indexOf('@') < 0) { authMessage = 'That does not look like an email address.'; renderAccount(); return; }
-      authEmail = email; authStage = 'busy'; authMessage = ''; renderAccount();
+      authEmail = email;
+      if (!email || email.indexOf('@') < 0) { setAuthMessage('That does not look like an email address.'); return; }
+      setAuthMessage(''); setAuthBusy(true);
       Sync.requestCode(email).then(function () {
         authStage = 'code'; authMessage = ''; renderAccount();
         var c = $('authCode'); if (c) c.focus();
       }).catch(function (e) {
-        authStage = 'idle'; authMessage = String(e.message || e); renderAccount();
+        authStage = 'codeRequest'; setAuthMessage(String(e.message || e));
       });
     } else if (t.closest('#authVerify')) {
       var code = ($('authCode').value || '').trim();
       if (!code) return;
-      authMessage = ''; renderAccount();
+      setAuthBusy(true);
       Sync.verifyCode(authEmail, code).then(function () {
         authStage = 'idle'; authMessage = '';
         render();
         doSync('sign-in');
       }).catch(function (e) {
-        authMessage = String(e.message || e);
-        authStage = 'code';
-        renderAccount();
+        setAuthBusy(false);
+        setAuthMessage(String(e.message || e));
       });
     } else if (t.closest('#authBack')) {
-      authStage = 'idle'; authMessage = ''; renderAccount();
+      authStage = 'codeRequest'; authMessage = ''; renderAccount();
     } else if (t.closest('#syncNow')) {
       doSync('manual');
     } else if (t.closest('#cfgSave')) {
@@ -689,8 +755,8 @@
         authMessage = '';
         render();
       } catch (e) {
-        authMessage = String(e.message || e);
-        renderAccount();
+        /* In place: a rejected paste must not take the key with it. */
+        setAuthMessage(String(e.message || e));
       }
     } else if (t.closest('#cfgClear')) {
       if (!confirm('Forget the Supabase project details on this device? You will be signed out of sync.')) return;
@@ -707,6 +773,9 @@
   });
   $('accountBody').addEventListener('keydown', function (ev) {
     if (ev.key !== 'Enter') return;
+    if (ev.target.id === 'pwEmail' || ev.target.id === 'pwPass') {
+      ev.preventDefault(); var si = $('pwSignIn'); if (si) si.click(); return;
+    }
     if (ev.target.id === 'authEmail') { ev.preventDefault(); var b = $('authSend'); if (b) b.click(); }
     if (ev.target.id === 'authCode')  { ev.preventDefault(); var v = $('authVerify'); if (v) v.click(); }
   });

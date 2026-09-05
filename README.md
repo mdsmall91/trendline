@@ -63,12 +63,15 @@ from gone.
    - **Once, for every device** — put them in [`config.js`](config.js) and
      push. A filled-in `config.js` always wins over anything typed on a
      device, so there is one source of truth.
-5. In Supabase, **Authentication → Emails → Magic Link**, put
-   `{{ .Token }}` in the template. The stock template sends a *link*, and
-   the app asks for a *code* — a link has to open in the browser that
-   requested it, which on iOS is routinely the wrong one.
-6. In the app: **Setup → Sync**, enter your email, and type the six-digit
-   code that arrives. Repeat on your other devices with the same email.
+5. In Supabase, **Authentication → Providers → Email**, turn **Confirm
+   email off**. No mail then has to be sent or received at all.
+6. In the app: **Setup → Sync**, enter an email and password, **Create
+   account**. On every other device, same email and password, **Sign in**.
+
+Signing in with an emailed code is offered too, but it needs the Supabase
+Magic Link template to carry `{{ .Token }}` — the stock template sends a
+link, and a link has to open in the browser that asked for it, which on
+iOS means Safari rather than the home-screen app.
 
 The setup form refuses a URL that isn't a project endpoint, and refuses
 the **secret / service role key** — that one bypasses Row Level Security,

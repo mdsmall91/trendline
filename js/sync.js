@@ -249,9 +249,40 @@ var Sync = (function () {
     });
   }
 
-  /* Email one-time code rather than a magic link: a link has to come
-     back to the exact browser that asked for it, which on iOS often
-     means the wrong one. A six-digit code always works. */
+  /* Two ways in, and password is the default.
+
+     Password needs no email at all: no template to configure, no mail
+     server to rate-limit you, no link that has to come back to the exact
+     browser that asked for it. On iOS that last one matters — a
+     home-screen app has its own storage, separate from Safari, so a link
+     opened in Safari authenticates the wrong thing.
+
+     The one-time code path is kept for anyone who would rather not have
+     a password, but it depends on the Supabase email template carrying
+     {{ .Token }}, and the stock template does not. */
+
+  function signUp(email, password) {
+    return authFetch('signup', { email: email, password: password })
+      .then(function (j) {
+        if (!j.access_token) {
+          /* Supabase withholds the session when email confirmation is on. */
+          throw new Error('Account created, but the project requires email confirmation. ' +
+            'Either confirm from the email, or turn off Authentication → Providers → Email → Confirm email, then sign in.');
+        }
+        storeSession(j, email);
+        return account();
+      });
+  }
+
+  function signInPassword(email, password) {
+    return authFetch('token?grant_type=password', { email: email, password: password })
+      .then(function (j) {
+        if (!j.access_token) throw new Error('No session came back. Check the email and password.');
+        storeSession(j, email);
+        return account();
+      });
+  }
+
   function requestCode(email) {
     return authFetch('otp', { email: email, create_user: true });
   }
@@ -476,6 +507,7 @@ var Sync = (function () {
     configured: configured, configSource: configSource,
     setConfig: setConfig, clearConfig: clearConfig,
     signedIn: signedIn, account: account,
+    signUp: signUp, signInPassword: signInPassword,
     requestCode: requestCode, verifyCode: verifyCode, signOut: signOut,
     run: run, pendingCount: pendingCount
   };

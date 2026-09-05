@@ -47,30 +47,44 @@ The script is safe to run more than once.
 
 ---
 
-## 3. Send a code instead of a link
+## 3. Turn off email confirmation
 
-**This is the step that otherwise makes the app look broken.**
+**Authentication → Providers → Email**
 
-Supabase's default sign-in email contains a magic *link*. Trendline asks
-for a six-digit *code*, because a link has to open in the exact browser
-that requested it — which on iOS routinely means the wrong one, and would
-break sign-in on a home-screen app.
+- **Enable Email provider**: on (it is by default)
+- **Confirm email**: **off**
 
-**Authentication → Emails → Magic Link**, and replace the message body:
+That's it. Trendline signs you in with an email and a password, so no
+message ever has to be sent or received. Leave *Confirm email* on and
+Supabase withholds the session until you click a link in an email, which
+is the one thing that stalls setup.
+
+Passkeys, OAuth providers and phone auth are all irrelevant here — the app
+doesn't use them, and enabling them changes nothing.
+
+### If you'd rather not have a password
+
+There's a second sign-in option in the app — **Email me a code instead** —
+which sends a six-digit code. It needs one extra step, because Supabase's
+stock template sends a *link* and the app asks for a *code*: go to
+**Authentication → Emails → Magic Link** and put `{{ .Token }}` in the
+template body:
 
 ```html
 <h2>Your Trendline sign-in code</h2>
 <p>Enter this in the app:</p>
 <p style="font-size:28px;letter-spacing:6px;font-family:monospace"><b>{{ .Token }}</b></p>
-<p>It expires in an hour. If you didn't ask for it, ignore this email.</p>
+<p>It expires in an hour.</p>
 ```
 
-Save. The `{{ .Token }}` placeholder is what produces the six digits.
+If that screen is read-only or missing in your dashboard, ignore it and use
+the password. Codes exist for people who don't want a password, not because
+they work better.
 
-While you're in **Authentication → Providers**, confirm **Email** is
-enabled. It is on by default.
-
----
+Why a code and not the link itself: a magic link has to open in the exact
+browser that asked for it. On iOS a home-screen app has its own storage,
+separate from Safari, so tapping the link in Mail signs in Safari and
+leaves the app still logged out.
 
 ## 4. Copy the two values
 
@@ -89,12 +103,11 @@ paste it by mistake, but know the difference anyway.
 
 ## 5. Turn on sync
 
-Open Trendline → **Setup → Sync**, paste both values, **Turn on sync**.
+Open Trendline → **Setup → Sync**, paste the URL and key, **Turn on sync**.
 
-Then enter your email, and type the six digits from the message.
-
-Do the same on every other device, **with the same email address**. That is
-what ties them to one account.
+Then enter your email and a password and press **Create account**. First
+device only — on every device after that, use the same email and password
+and press **Sign in**. That shared account is what ties them together.
 
 ### Making it permanent (optional)
 
@@ -131,8 +144,15 @@ If step 4 works, you're done.
 
 ## When something goes wrong
 
-**The email has a link, not a code.** Step 3 was skipped. Fix the template
-and request a new code.
+**"Account created, but the project requires email confirmation."**
+*Confirm email* is still on — see step 3. Turn it off, then **Sign in**
+(the account already exists; don't press Create account again).
+
+**"Invalid login credentials".** Wrong password, or no account yet on this
+project. Press **Create account** once, then **Sign in** everywhere else.
+
+**The email has a link, not a code.** Only applies to the code option. The
+Magic Link template needs `{{ .Token }}` — or just use a password.
 
 **"Email rate limit exceeded".** Supabase's built-in mail server allows only
 a handful of messages per hour — it is meant for testing. Wait an hour. You
