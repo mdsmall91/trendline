@@ -16,6 +16,7 @@
      days      { date: record }  weight, note, habit ticks
      entries   { id: record }    one logged food line
      workouts  { id: record }    one training session or step count
+     plans     { id: record }    a custom workout template, or a program
 
    Food lines are their own records rather than an array inside the
    day. If they lived on the day, logging breakfast on your phone and
@@ -78,7 +79,7 @@ var Store = (function () {
       version: 2,
       deviceId: uid('dev'),
       settings: defaultSettings(),
-      foods: {}, habits: defaultHabits(), days: {}, entries: {}, workouts: {},
+      foods: {}, habits: defaultHabits(), days: {}, entries: {}, workouts: {}, plans: {},
       sync: { userId: null, email: null, cursors: {}, lastSyncAt: null, lastError: null }
     };
   }
@@ -141,6 +142,7 @@ var Store = (function () {
       /* Absent in payloads written before training existed. An older
          device syncing up must not have its file rejected for it. */
       workouts: obj.workouts && typeof obj.workouts === 'object' ? obj.workouts : {},
+      plans: obj.plans && typeof obj.plans === 'object' ? obj.plans : {},
       sync: Object.assign({}, d.sync, obj.sync || {})
     };
     if (!out.sync.cursors || typeof out.sync.cursors !== 'object') out.sync.cursors = {};
@@ -497,6 +499,74 @@ var Store = (function () {
   }
 
   /* ---------------------------------------------------------------
+     PLANS — custom workouts and programs
+
+     One collection with a kind, rather than two tables, because they
+     are the same record with a different payload: a workout is a list
+     of exercises, a program is a list of workouts against days. Making
+     them one thing means one editor shape, one sync mapping, and one
+     place where "which of these still points at something real" is
+     answered.
+
+     The catalog's own sessions are NOT stored here. They are read-only
+     seeds shipped with the app; copying one produces a plan you own and
+     can edit, and the original stays put so a later catalog update does
+     not silently rewrite something you changed.
+     --------------------------------------------------------------- */
+
+  function plans(kind) {
+    return alive(load().plans)
+      .filter(function (p) { return !kind || p.kind === kind; })
+      .sort(function (a, b) {
+        return String(a.name || '').toLowerCase() < String(b.name || '').toLowerCase() ? -1 : 1;
+      });
+  }
+
+  function plan(id) {
+    var p = load().plans[id];
+    return (p && !p.deletedAt) ? p : null;
+  }
+
+  function savePlan(rec) {
+    var s = load();
+    var id = rec.id || uid('p');
+    var prev = s.plans[id];
+    s.plans[id] = touch({
+      id: id,
+      kind: rec.kind || (prev && prev.kind) || 'workout',
+      name: rec.name || 'Untitled',
+      /* A workout carries items; a program carries a schedule. The
+         unused one stays null rather than an empty array, so "this
+         program has no days yet" and "this is a workout" never look
+         the same to anything reading it. */
+      items: rec.items !== undefined ? rec.items : (prev ? prev.items : null),
+      schedule: rec.schedule !== undefined ? rec.schedule : (prev ? prev.schedule : null),
+      sourceId: rec.sourceId !== undefined ? rec.sourceId : (prev ? prev.sourceId : null),
+      notes: rec.notes !== undefined ? rec.notes : (prev ? prev.notes : ''),
+      deletedAt: null
+    });
+    save();
+    return s.plans[id];
+  }
+
+  function removePlan(id) {
+    var s = load();
+    if (!s.plans[id]) return;
+    s.plans[id].deletedAt = now();
+    touch(s.plans[id]);
+    save();
+  }
+
+  /* Programs that reference a workout. Asked before deleting one, so a
+     program is never left pointing at nothing — a schedule with a hole
+     in it is worse than a refusal to make one. */
+  function programsUsing(workoutId) {
+    return plans('program').filter(function (p) {
+      return (p.schedule || []).some(function (d) { return d.planId === workoutId; });
+    });
+  }
+
+  /* ---------------------------------------------------------------
      STRENGTH SESSIONS
 
      A session is a workout record whose `sets` array holds one row per
@@ -734,7 +804,7 @@ var Store = (function () {
     /* Cursors are reset so the next pull re-reads the whole cloud copy
        and reconciles it against what was just imported. */
     next.sync = { userId: keepSync.userId, email: keepSync.email, cursors: {}, lastSyncAt: null, lastError: null };
-    ['foods', 'habits', 'days', 'entries', 'workouts'].forEach(function (c) {
+    ['foods', 'habits', 'days', 'entries', 'workouts', 'plans'].forEach(function (c) {
       Object.keys(next[c]).forEach(function (k) { next[c][k].dirty = true; });
     });
     next.settings.dirty = true;
@@ -767,6 +837,8 @@ var Store = (function () {
     entriesFor: entriesFor, engineEntries: engineEntries,
     workoutsFor: workoutsFor, addWorkout: addWorkout, removeWorkout: removeWorkout,
     setSteps: setSteps, stepsOn: stepsOn,
+    plans: plans, plan: plan, savePlan: savePlan, removePlan: removePlan,
+    programsUsing: programsUsing,
     startSession: startSession, logSet: logSet, finishSession: finishSession,
     updateWorkout: updateWorkout,
     exerciseHistory: exerciseHistory, openSession: openSession,

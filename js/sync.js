@@ -35,9 +35,10 @@ var Sync = (function () {
     habits:   { fields: ['id', 'name', 'sort'] },
     days:     { fields: ['id', 'weight', 'note', 'habits'] },
     entries:  { fields: ['id', 'date', 'foodId', 'name', 'qty', 'kcal', 'protein', 'carbs', 'fat'] },
-    workouts: { fields: ['id', 'date', 'kind', 'activity', 'name', 'minutes', 'steps', 'kcal', 'sets', 'createdAt', 'templateId', 'finishedAt'] }
+    workouts: { fields: ['id', 'date', 'kind', 'activity', 'name', 'minutes', 'steps', 'kcal', 'sets', 'createdAt', 'templateId', 'finishedAt'] },
+    plans:    { fields: ['id', 'kind', 'name', 'items', 'schedule', 'sourceId', 'notes'] }
   };
-  var TABLE_NAMES = ['foods', 'habits', 'days', 'entries', 'workouts'];
+  var TABLE_NAMES = ['foods', 'habits', 'days', 'entries', 'workouts', 'plans'];
 
   function snake(s) { return s.replace(/[A-Z]/g, function (c) { return '_' + c.toLowerCase(); }); }
   function camel(s) { return s.replace(/_([a-z])/g, function (_, c) { return c.toUpperCase(); }); }

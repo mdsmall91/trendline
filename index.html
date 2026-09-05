@@ -323,14 +323,64 @@
 
   <!-- ---------------- WORKOUTS ---------------- -->
   <div id="trainWorkouts" hidden>
-    <div class="card">
-      <h2>Start a workout</h2>
-      <div class="hint" style="margin:0 0 var(--s-3)">Loads a copy. Editing it here never
-        changes the template.</div>
-      <ul class="list" id="sessionList"></ul>
+
+    <div class="seg" id="planSeg" style="margin-bottom:var(--s-4)">
+      <button data-plan="workout" aria-pressed="true">Workouts</button>
+      <button data-plan="program" aria-pressed="false">Programs</button>
     </div>
+
+    <!-- workout / program editor -->
+    <div class="card" id="planEdit" hidden>
+      <div class="row" style="align-items:center;margin-bottom:var(--s-2)">
+        <h2 style="margin:0;flex:1" id="peTitle">Edit</h2>
+        <button class="btn ghost grow-0" id="peClose" aria-label="Close">&times;</button>
+      </div>
+      <label class="field"><span>Name</span>
+        <input type="text" id="peName" placeholder="Tuesday upper"></label>
+
+      <!-- workout: its exercises -->
+      <div id="peItemsWrap">
+        <ul class="list" id="peItems"></ul>
+        <div class="row" style="margin-top:var(--s-3)">
+          <label class="field" style="margin:0"><span class="sr">Add an exercise</span>
+            <input type="text" id="peAddSearch" autocomplete="off"
+                   placeholder="Add an exercise — biceps, hinge, dumbbell…"></label>
+        </div>
+        <ul class="list" id="peAddResults"></ul>
+      </div>
+
+      <!-- program: its days -->
+      <div id="peDaysWrap" hidden>
+        <ul class="list" id="peDays"></ul>
+        <div class="row" style="margin-top:var(--s-3)">
+          <label class="field grow-0" style="margin:0;width:96px"><span>Day</span>
+            <input type="number" id="peDayNum" inputmode="numeric" min="1" max="7" value="1"></label>
+          <label class="field" style="margin:0"><span>Workout</span>
+            <select id="peDayPlan"></select></label>
+          <button class="btn grow-0" id="peAddDay">Add</button>
+        </div>
+      </div>
+
+      <div class="row" style="margin-top:var(--s-4)">
+        <button class="btn primary" id="peSave">Save</button>
+        <button class="btn ghost grow-0" id="peDelete">Delete</button>
+      </div>
+      <div class="hint" id="peHint"></div>
+    </div>
+
     <div class="card">
-      <h2>Programs</h2>
+      <div class="row" style="align-items:center;margin-bottom:var(--s-3)">
+        <h2 style="margin:0;flex:1" id="planListTitle">Your workouts</h2>
+        <button class="btn primary grow-0" id="planNew" aria-label="New">+</button>
+      </div>
+      <ul class="list" id="planList"></ul>
+    </div>
+
+    <div class="card">
+      <h2 id="catalogTitle">From the catalog</h2>
+      <div class="hint" style="margin:0 0 var(--s-3)" id="catalogHint">Read-only. Start one
+        directly, or copy it to get an editable version of your own.</div>
+      <ul class="list" id="sessionList"></ul>
       <div id="programList"></div>
     </div>
   </div>

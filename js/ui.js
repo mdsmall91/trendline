@@ -14,7 +14,7 @@
   /* Bumped by hand on each deploy, and shown under Setup → Version.
      Its only job is to let "it still looks old" be answered with a
      number instead of a guess. Keep it in step with CACHE in sw.js. */
-  var BUILD = '2026-09-05.15';
+  var BUILD = '2026-09-05.16';
   var day = WL.todayKey();
   var range = 30;
   var foodFilterText = '';
@@ -31,6 +31,9 @@
   var exQuery = '';             /* exercise search box */
   var exOpenId = null;          /* exercise whose detail card is open */
   var gymError = '';            /* catalog load failure, shown rather than swallowed */
+  var planKind = 'workout';     /* Workouts view: workout | program */
+  var editing_plan = null;      /* the plan being edited, as a working copy */
+  var peSearch = '';            /* exercise search inside the editor */
 
   function fmt(n, dp) {
     if (n === null || n === undefined || !isFinite(n)) return '—';
@@ -701,36 +704,140 @@
      WORKOUT TEMPLATES
      --------------------------------------------------------------- */
 
+  /* ---------------------------------------------------------------
+     WORKOUTS AND PROGRAMS
+
+     A workout is a list of exercises. A program is a list of workouts
+     against days. The catalog ships both as read-only seeds: copying
+     one gives you an editable plan of your own and leaves the original
+     alone, so a later catalog update can never quietly rewrite
+     something you changed.
+     --------------------------------------------------------------- */
+
+  function planItemLine(it) {
+    var t = it.min === it.max ? String(it.min) : it.min + '\u2013' + it.max;
+    var bits = [it.sets + ' \u00d7 ' + t + (it.unit === 'reps' ? '' : ' ' + it.unit)];
+    if (it.rir !== null && it.rir !== undefined) bits.push(it.rir + ' RIR');
+    if (it.scope === 'per_side') bits.push('each side');
+    return bits.join('  \u00b7  ');
+  }
+
   function renderWorkoutTemplates() {
+    $('planListTitle').textContent = planKind === 'program' ? 'Your programs' : 'Your workouts';
+    $('catalogTitle').textContent = planKind === 'program'
+      ? 'Programs from the catalog' : 'Workouts from the catalog';
+
+    var mine = Store.plans(planKind);
+    $('planList').innerHTML = mine.length ? mine.map(function (p) {
+      var sub = planKind === 'program'
+        ? (p.schedule || []).length + ' days'
+        : (p.items || []).length + ' exercises';
+      return '<li><button class="rowedit" data-plan-open="' + esc(p.id) + '">' +
+        '<span class="name"><b>' + esc(p.name) + '</b><small>' + esc(sub) + '</small></span>' +
+        '</button>' +
+        (planKind === 'workout'
+          ? '<button class="btn ghost grow-0" data-plan-start="' + esc(p.id) + '">Start</button>'
+          : '') + '</li>';
+    }).join('') : '<li><span class="empty" style="flex:1">' +
+      (planKind === 'program'
+        ? 'No programs yet. A program schedules your workouts across a week.'
+        : 'No workouts of your own yet. Build one, or copy a catalog session below.') +
+      '</span></li>';
+
     if (!Gym.ready()) {
       $('sessionList').innerHTML = '<li><span class="empty" style="flex:1">' +
         esc(gymError || 'Loading the catalog\u2026') + '</span></li>';
       $('programList').innerHTML = '';
+      renderPlanEditor();
       return;
     }
-    $('sessionList').innerHTML = Gym.sessions().map(function (se) {
-      var mins = se.estimated_minutes || [];
-      var sub = [];
-      if (mins.length === 2) sub.push(mins[0] + '\u2013' + mins[1] + ' min');
-      sub.push(se.items.length + ' exercises');
-      sub.push(se.difficulty);
-      return '<li><button class="rowedit" data-start="' + esc(se.id) + '">' +
-        '<span class="name"><b>' + esc(se.name) + '</b><small>' + esc(sub.join('  \u00b7  ')) +
-        '</small></span><span class="kcal">Start</span></button></li>';
-    }).join('');
 
-    $('programList').innerHTML = Gym.programs().map(function (p) {
-      var days = p.schedule.map(function (d) {
-        var se = Gym.sessions().filter(function (x) { return x.id === d.session_id; })[0];
-        return 'Day ' + d.day + ': ' + (se ? se.name : d.session_id);
-      });
-      return '<div style="margin-bottom:var(--s-5)">' +
-        '<div class="habit" style="border:0;padding:0 0 var(--s-1)">' +
-        '<span class="name">' + esc(p.name) + '</span>' +
-        '<span class="streak">' + p.days_per_week + '\u00d7/wk</span></div>' +
-        '<div class="hint" style="margin:0">' + esc(days.join(' \u00b7 ')) + '</div>' +
-        '<div class="hint">' + esc(p.notes || '') + '</div></div>';
-    }).join('');
+    if (planKind === 'workout') {
+      $('sessionList').hidden = false;
+      $('programList').innerHTML = '';
+      $('sessionList').innerHTML = Gym.sessions().map(function (se) {
+        var mins = se.estimated_minutes || [];
+        var sub = [];
+        if (mins.length === 2) sub.push(mins[0] + '\u2013' + mins[1] + ' min');
+        sub.push(se.items.length + ' exercises');
+        return '<li><button class="rowedit" data-start="' + esc(se.id) + '">' +
+          '<span class="name"><b>' + esc(se.name) + '</b><small>' + esc(sub.join('  \u00b7  ')) +
+          '</small></span><span class="kcal">Start</span></button>' +
+          '<button class="btn ghost grow-0" data-copy="' + esc(se.id) + '">Copy</button></li>';
+      }).join('');
+    } else {
+      $('sessionList').innerHTML = '';
+      $('programList').innerHTML = Gym.programs().map(function (p) {
+        var days = p.schedule.map(function (d) {
+          var se = Gym.sessions().filter(function (x) { return x.id === d.session_id; })[0];
+          return 'Day ' + d.day + ': ' + (se ? se.name : d.session_id);
+        });
+        return '<div style="margin-bottom:var(--s-5)">' +
+          '<div class="habit" style="border:0;padding:0 0 var(--s-1)">' +
+          '<span class="name">' + esc(p.name) + '</span>' +
+          '<button class="btn ghost grow-0" data-copy-prog="' + esc(p.id) + '">Copy</button></div>' +
+          '<div class="hint" style="margin:0">' + esc(days.join(' \u00b7 ')) + '</div>' +
+          '<div class="hint">' + esc(p.notes || '') + '</div></div>';
+      }).join('');
+    }
+    renderPlanEditor();
+  }
+
+  function renderPlanEditor() {
+    var e = editing_plan;
+    $('planEdit').hidden = !e;
+    if (!e) return;
+
+    $('peTitle').textContent = e.id ? 'Edit' : (e.kind === 'program' ? 'New program' : 'New workout');
+    if (document.activeElement !== $('peName')) $('peName').value = e.name || '';
+    $('peItemsWrap').hidden = e.kind !== 'workout';
+    $('peDaysWrap').hidden = e.kind !== 'program';
+    $('peDelete').hidden = !e.id;
+
+    if (e.kind === 'workout') {
+      $('peItems').innerHTML = (e.items || []).map(function (it, i) {
+        return '<li><span class="name"><b>' + esc(it.name) + '</b><small>' +
+          esc(planItemLine(it)) + '</small></span>' +
+          '<button class="btn ghost grow-0" data-item-up="' + i + '" aria-label="Up">\u2191</button>' +
+          '<button class="btn ghost grow-0" data-item-edit="' + i + '">Edit</button>' +
+          '<button class="btn ghost grow-0" data-item-rm="' + i + '" aria-label="Remove">&times;</button></li>';
+      }).join('') || '<li><span class="empty" style="flex:1">No exercises yet. Search below to ' +
+        'add one.</span></li>';
+
+      if (peSearch && Gym.ready()) {
+        var r = Gym.search(peSearch, { equipmentOnly: true });
+        $('peAddResults').innerHTML = r.primary.slice(0, 12).map(function (x) {
+          return '<li><button class="rowedit" data-add-ex="' + esc(x.id) + '">' +
+            '<span class="name"><b>' + esc(x.name) + '</b><small>' +
+            esc(String(x.movement_pattern).replace(/_/g, ' ')) + '</small></span>' +
+            '<span class="kcal">Add</span></button></li>';
+        }).join('') || '<li><span class="empty" style="flex:1">Nothing matches.</span></li>';
+      } else {
+        $('peAddResults').innerHTML = '';
+      }
+      $('peHint').textContent = (e.items || []).length
+        ? 'A full-body session wants lower-body work, a push and a pull. Across the week, a ' +
+          'squat or lunge and a hinge.'
+        : '';
+    } else {
+      var mineW = Store.plans('workout');
+      $('peDayPlan').innerHTML = mineW.map(function (w) {
+        return '<option value="' + esc(w.id) + '">' + esc(w.name) + '</option>';
+      }).join('') || '<option value="">\u2014 build a workout first \u2014</option>';
+
+      $('peDays').innerHTML = (e.schedule || []).slice().sort(function (a, b) {
+        return a.day - b.day;
+      }).map(function (d, i) {
+        var w = Store.plan(d.planId);
+        return '<li><span class="name"><b>Day ' + d.day + '</b><small>' +
+          esc(w ? w.name : 'this workout was deleted') + '</small></span>' +
+          '<button class="btn ghost grow-0" data-day-rm="' + esc(d.day) + '" aria-label="Remove">&times;</button></li>';
+      }).join('') || '<li><span class="empty" style="flex:1">No days yet.</span></li>';
+
+      $('peHint').textContent = mineW.length
+        ? 'Unlisted days are rest days.'
+        : 'Programs schedule your own workouts, so build at least one first.';
+    }
   }
 
   /* ---------------------------------------------------------------
@@ -1503,7 +1610,256 @@
     window.scrollTo(0, 0);
   });
 
+  /* ---- custom workouts and programs ---- */
+
+  function defaultItemFor(ex) {
+    return {
+      ex: ex.id, name: ex.name, sets: 3,
+      min: 8, max: 12, unit: ex.tracking_mode || 'reps',
+      scope: ex.laterality === 'unilateral' ? 'per_side' : 'total',
+      rest: 90, rir: 3
+    };
+  }
+
+  function openPlan(rec) {
+    /* A working copy. Editing the stored record directly would make
+       Cancel impossible and would write half-finished plans into sync
+       on every keystroke. */
+    editing_plan = JSON.parse(JSON.stringify(rec));
+    peSearch = '';
+    $('peAddSearch').value = '';
+    renderWorkoutTemplates();
+    $('planEdit').scrollIntoView({ block: 'start', behavior: 'smooth' });
+  }
+
+  $('planSeg').addEventListener('click', function (ev) {
+    var b = ev.target.closest('[data-plan]');
+    if (!b) return;
+    planKind = b.dataset.plan;
+    editing_plan = null;
+    Array.prototype.forEach.call($('planSeg').children, function (x) {
+      x.setAttribute('aria-pressed', String(x === b));
+    });
+    renderWorkoutTemplates();
+  });
+
+  $('planNew').addEventListener('click', function () {
+    openPlan(planKind === 'program'
+      ? { kind: 'program', name: '', schedule: [] }
+      : { kind: 'workout', name: '', items: [] });
+    $('peName').focus();
+  });
+
+  $('planList').addEventListener('click', function (ev) {
+    var open = ev.target.closest('[data-plan-open]');
+    if (open) {
+      var rec = Store.plan(open.dataset.planOpen);
+      if (rec) openPlan(rec);
+      return;
+    }
+    var st = ev.target.closest('[data-plan-start]');
+    if (st) {
+      var w = Store.plan(st.dataset.planStart);
+      if (!w || !(w.items || []).length) return;
+      startPlan(w.name, w.id, w.items);
+    }
+  });
+
+  /* Copying a catalog session. The copy is yours from that moment: it
+     keeps sourceId so it is obvious where it came from, but nothing
+     downstream reads back through it, so editing the copy is safe and a
+     catalog update cannot reach it. */
+  $('sessionList').addEventListener('click', function (ev) {
+    var c = ev.target.closest('[data-copy]');
+    if (!c || !Gym.ready()) return;
+    ev.stopPropagation();
+    var se = Gym.sessions().filter(function (x) { return x.id === c.dataset.copy; })[0];
+    if (!se) return;
+    var rec = Store.savePlan({
+      kind: 'workout', name: se.name + ' (copy)', sourceId: se.id,
+      items: se.items.map(function (it) {
+        return {
+          ex: it.exercise_id, name: Gym.name(it.exercise_id), sets: it.sets,
+          min: it.target.min, max: it.target.max, unit: it.target.unit,
+          scope: it.target_scope, rest: it.rest_seconds, rir: it.rir_target
+        };
+      })
+    });
+    openPlan(rec);
+  });
+
+  $('programList').addEventListener('click', function (ev) {
+    var c = ev.target.closest('[data-copy-prog]');
+    if (!c || !Gym.ready()) return;
+    var pg = Gym.programs().filter(function (x) { return x.id === c.dataset.copyProg; })[0];
+    if (!pg) return;
+    /* A catalog program schedules catalog sessions. Copying it has to
+       copy those too, or the new program points at things the plan
+       editor cannot show or edit. */
+    var made = {};
+    var schedule = pg.schedule.map(function (d) {
+      if (!made[d.session_id]) {
+        var se = Gym.sessions().filter(function (x) { return x.id === d.session_id; })[0];
+        if (!se) return null;
+        made[d.session_id] = Store.savePlan({
+          kind: 'workout', name: se.name, sourceId: se.id,
+          items: se.items.map(function (it) {
+            return {
+              ex: it.exercise_id, name: Gym.name(it.exercise_id), sets: it.sets,
+              min: it.target.min, max: it.target.max, unit: it.target.unit,
+              scope: it.target_scope, rest: it.rest_seconds, rir: it.rir_target
+            };
+          })
+        }).id;
+      }
+      return { day: d.day, planId: made[d.session_id] };
+    }).filter(Boolean);
+    var rec = Store.savePlan({
+      kind: 'program', name: pg.name + ' (copy)', sourceId: pg.id,
+      schedule: schedule, notes: pg.notes || ''
+    });
+    planKind = 'program';
+    Array.prototype.forEach.call($('planSeg').children, function (x) {
+      x.setAttribute('aria-pressed', String(x.dataset.plan === 'program'));
+    });
+    openPlan(rec);
+  });
+
+  /* editor: exercises */
+  $('peAddSearch').addEventListener('input', function () {
+    peSearch = $('peAddSearch').value.trim();
+    renderPlanEditor();
+  });
+
+  $('peAddResults').addEventListener('click', function (ev) {
+    var b = ev.target.closest('[data-add-ex]');
+    if (!b || !editing_plan || !Gym.ready()) return;
+    var ex = Gym.byId(b.dataset.addEx);
+    if (!ex) return;
+    editing_plan.items = (editing_plan.items || []).concat([defaultItemFor(ex)]);
+    peSearch = '';
+    $('peAddSearch').value = '';
+    renderPlanEditor();
+  });
+
+  $('peItems').addEventListener('click', function (ev) {
+    if (!editing_plan) return;
+    var rm = ev.target.closest('[data-item-rm]');
+    if (rm) {
+      editing_plan.items.splice(Number(rm.dataset.itemRm), 1);
+      renderPlanEditor();
+      return;
+    }
+    var up = ev.target.closest('[data-item-up]');
+    if (up) {
+      var i = Number(up.dataset.itemUp);
+      if (i > 0) {
+        var t = editing_plan.items[i - 1];
+        editing_plan.items[i - 1] = editing_plan.items[i];
+        editing_plan.items[i] = t;
+        renderPlanEditor();
+      }
+      return;
+    }
+    var ed = ev.target.closest('[data-item-edit]');
+    if (ed) {
+      var idx = Number(ed.dataset.itemEdit);
+      var it = editing_plan.items[idx];
+      var setsStr = prompt(it.name + '\nHow many sets?', String(it.sets));
+      if (setsStr === null) return;
+      var rangeStr = prompt(it.name + '\nTarget ' + (it.unit === 'reps' ? 'reps' : it.unit) +
+        ' \u2014 as "8-12" or a single number', it.min + '-' + it.max);
+      if (rangeStr === null) return;
+      var rirStr = prompt(it.name + '\nReps in reserve to aim for. Blank for none \u2014 timed ' +
+        'holds and carries have no meaningful RIR.',
+        it.rir === null || it.rir === undefined ? '' : String(it.rir));
+      if (rirStr === null) return;
+
+      var sets = parseInt(setsStr, 10);
+      if (isFinite(sets) && sets > 0) it.sets = sets;
+      var m = String(rangeStr).match(/(\d+)\s*(?:[-\u2013]\s*(\d+))?/);
+      if (m) {
+        it.min = Number(m[1]);
+        it.max = m[2] ? Number(m[2]) : Number(m[1]);
+        if (it.max < it.min) { var q = it.min; it.min = it.max; it.max = q; }
+      }
+      var rir = parseFloat(rirStr);
+      it.rir = isFinite(rir) ? rir : null;
+      renderPlanEditor();
+    }
+  });
+
+  /* editor: program days */
+  $('peAddDay').addEventListener('click', function () {
+    if (!editing_plan) return;
+    var d = parseInt($('peDayNum').value, 10);
+    var pid = $('peDayPlan').value;
+    if (!isFinite(d) || d < 1 || d > 7 || !pid) return;
+    var sched = (editing_plan.schedule || []).filter(function (x) { return x.day !== d; });
+    /* One workout per day. Two on the same day is a schedule with no
+       answer for which one "today's workout" means. */
+    sched.push({ day: d, planId: pid });
+    editing_plan.schedule = sched;
+    renderPlanEditor();
+  });
+
+  $('peDays').addEventListener('click', function (ev) {
+    var b = ev.target.closest('[data-day-rm]');
+    if (!b || !editing_plan) return;
+    var d = Number(b.dataset.dayRm);
+    editing_plan.schedule = (editing_plan.schedule || []).filter(function (x) { return x.day !== d; });
+    renderPlanEditor();
+  });
+
+  $('peSave').addEventListener('click', function () {
+    if (!editing_plan) return;
+    var name = $('peName').value.trim();
+    if (!name) { $('peName').focus(); return; }
+    editing_plan.name = name;
+    Store.savePlan(editing_plan);
+    editing_plan = null;
+    render();
+  });
+
+  $('peClose').addEventListener('click', function () {
+    editing_plan = null;
+    renderWorkoutTemplates();
+  });
+
+  $('peDelete').addEventListener('click', function () {
+    if (!editing_plan || !editing_plan.id) return;
+    if (editing_plan.kind === 'workout') {
+      /* A program pointing at a deleted workout is a schedule with a
+         hole in it, which is worse than refusing to make one. */
+      var used = Store.programsUsing(editing_plan.id);
+      if (used.length && !confirm('This workout is used by ' +
+          used.map(function (p) { return p.name; }).join(', ') +
+          '. Delete it anyway? Those days will point at nothing.')) return;
+    }
+    if (!confirm('Delete "' + editing_plan.name + '"? Sessions you already logged from it stay.')) return;
+    Store.removePlan(editing_plan.id);
+    editing_plan = null;
+    render();
+  });
+
   /* ---- starting and running a session ---- */
+
+  function startPlan(name, templateId, items) {
+    var existing = Store.openSession(day);
+    if (existing && !confirm('There is already a workout in progress for this day. Start ' +
+        name + ' instead? The one in progress keeps whatever you logged.')) return;
+    if (existing) Store.finishSession(existing.id, existing.minutes || null);
+    Store.startSession(day, {
+      name: name, templateId: templateId, intensity: 'lift_moderate', items: items
+    });
+    trainView = 'today';
+    Array.prototype.forEach.call($('trainSeg').children, function (x) {
+      x.setAttribute('aria-pressed', String(x.dataset.train === 'today'));
+    });
+    editing_plan = null;
+    render();
+    window.scrollTo(0, 0);
+  }
 
   $('sessionList').addEventListener('click', function (ev) {
     var b = ev.target.closest('[data-start]');

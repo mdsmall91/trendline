@@ -127,6 +127,24 @@ alter table public.foods add column if not exists kind     text;
 alter table public.foods add column if not exists servings double precision;
 alter table public.foods add column if not exists tags     jsonb;
 
+-- a custom workout template, or a program that schedules them. One
+-- table with a kind, because they are the same record with a different
+-- payload and splitting them would double every mapping for nothing.
+create table if not exists public.plans (
+  user_id    uuid not null default auth.uid() references auth.users on delete cascade,
+  id         text not null,
+  kind       text,
+  name       text,
+  items      jsonb,
+  schedule   jsonb,
+  source_id  text,
+  notes      text,
+  updated_at timestamptz not null,
+  deleted_at timestamptz,
+  synced_at  timestamptz not null default now(),
+  primary key (user_id, id)
+);
+
 -- ---------- pull cursor ----------
 -- Every read is "give me what changed since X", so this index is the
 -- one that matters.
@@ -139,6 +157,7 @@ create index if not exists entries_cursor_idx  on public.entries  (user_id, sync
 create index if not exists entries_date_idx    on public.entries  (user_id, date);
 create index if not exists workouts_cursor_idx on public.workouts (user_id, synced_at);
 create index if not exists workouts_date_idx   on public.workouts (user_id, date);
+create index if not exists plans_cursor_idx    on public.plans    (user_id, synced_at);
 
 -- synced_at must be server-set on every write, including upserts that
 -- arrive with a stale value in the payload.
@@ -152,7 +171,7 @@ end $$;
 do $$
 declare t text;
 begin
-  foreach t in array array['settings','foods','habits','days','entries','workouts'] loop
+  foreach t in array array['settings','foods','habits','days','entries','workouts','plans'] loop
     execute format('drop trigger if exists %I_touch on public.%I', t, t);
     execute format(
       'create trigger %I_touch before insert or update on public.%I
@@ -170,11 +189,12 @@ alter table public.habits   enable row level security;
 alter table public.days     enable row level security;
 alter table public.entries  enable row level security;
 alter table public.workouts enable row level security;
+alter table public.plans    enable row level security;
 
 do $$
 declare t text;
 begin
-  foreach t in array array['settings','foods','habits','days','entries','workouts'] loop
+  foreach t in array array['settings','foods','habits','days','entries','workouts','plans'] loop
     execute format('drop policy if exists own_rows on public.%I', t);
     execute format(
       'create policy own_rows on public.%I
