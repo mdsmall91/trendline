@@ -173,6 +173,12 @@
     <div id="trendNotes"></div>
   </div>
 
+  <div class="seg" id="trendSeg" style="margin-bottom:var(--s-4)">
+    <button data-trend="food" aria-pressed="true">Food</button>
+    <button data-trend="training" aria-pressed="false">Training</button>
+  </div>
+
+  <div id="trendFood">
   <div class="card">
     <h2>Intake vs target</h2>
     <div id="intakeChart"></div>
@@ -193,6 +199,20 @@
       <span><i style="background:var(--accent);opacity:0.5"></i>target</span>
     </div>
     <div class="hint" id="macroSummary"></div>
+  </div>
+  </div>
+
+  <div id="trendTraining" hidden>
+    <div class="card">
+      <h2>What training bought you</h2>
+      <div class="stats" id="trainTrendStats"></div>
+      <div class="note plain" id="trainTrendNote"></div>
+    </div>
+    <div class="card">
+      <h2>Worked off, last 30 days</h2>
+      <div id="trainTrendChart"></div>
+      <div class="hint" id="trainTrendSummary"></div>
+    </div>
   </div>
 
 </section>
@@ -280,26 +300,44 @@
 <!-- ============================ FOODS ============================ -->
 <section class="panel" id="panel-foods" role="tabpanel" aria-labelledby="tab-foods">
 
-  <div class="card">
-    <h2>Add to library</h2>
+  <div class="seg" id="libSeg" style="margin-bottom:var(--s-4)">
+    <button data-lib="food" aria-pressed="true">Foods</button>
+    <button data-lib="recipe" aria-pressed="false">Recipes</button>
+  </div>
+
+  <div class="card" id="newFoodCard" hidden>
+    <h2 id="nfTitle">Add a food</h2>
     <label class="field"><span>Name</span>
       <input type="text" id="nfName" placeholder="Chobani 0% — 1 cup"></label>
     <label class="field"><span>Serving described as</span>
       <input type="text" id="nfServing" placeholder="1 cup / 100g / 1 bar"></label>
+    <div class="row" id="nfServingsRow" hidden>
+      <label class="field"><span>Servings the recipe makes</span>
+        <input type="number" id="nfServings" inputmode="decimal" step="0.5" min="0" placeholder="6"></label>
+    </div>
     <div class="row">
       <label class="field"><span>Cal</span><input type="number" id="nfKcal" inputmode="numeric"></label>
       <label class="field"><span>P (g)</span><input type="number" id="nfP" inputmode="decimal"></label>
       <label class="field"><span>C (g)</span><input type="number" id="nfC" inputmode="decimal"></label>
       <label class="field"><span>F (g)</span><input type="number" id="nfF" inputmode="decimal"></label>
     </div>
-    <button class="btn primary" id="saveFood">Save food</button>
+    <label class="field"><span>Tags (comma separated)</span>
+      <input type="text" id="nfTags" autocapitalize="off" placeholder="dinner, high protein, quick"></label>
+    <div class="row">
+      <button class="btn primary" id="saveFood">Save</button>
+      <button class="btn grow-0" id="cancelFood">Cancel</button>
+    </div>
     <div class="hint">Leave calories blank and they'll be worked out from the macros.</div>
   </div>
 
   <div class="card">
-    <h2>Your foods (<span id="foodCount">0</span>)</h2>
+    <div class="row" style="align-items:center;margin-bottom:var(--s-3)">
+      <h2 style="margin:0;flex:1" id="libTitle">Your foods (<span id="foodCount">0</span>)</h2>
+      <button class="btn primary grow-0" id="addFoodBtn" aria-label="Add">+</button>
+    </div>
     <label class="field"><span class="sr">Filter</span>
-      <input type="text" id="foodFilter" placeholder="Filter"></label>
+      <input type="text" id="foodFilter" placeholder="Filter by name"></label>
+    <div class="tagbar" id="tagFilter"></div>
     <ul class="list" id="foodLibrary"></ul>
   </div>
 

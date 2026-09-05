@@ -14,7 +14,7 @@
   /* Bumped by hand on each deploy, and shown under Setup → Version.
      Its only job is to let "it still looks old" be answered with a
      number instead of a guess. Keep it in step with CACHE in sw.js. */
-  var BUILD = '2026-09-05.11';
+  var BUILD = '2026-09-05.12';
   var day = WL.todayKey();
   var range = 30;
   var foodFilterText = '';
@@ -24,6 +24,9 @@
   var syncing = false;
   var lookup = { results: [], status: '', open: false };
   var macroKey = 'protein';     /* which macro the Trend chart is showing */
+  var trendView = 'food';       /* Trend sub-tab: food | training */
+  var libKind = 'food';         /* Foods panel: food | recipe */
+  var tagFilter = null;         /* active tag chip, or null for all */
 
   function fmt(n, dp) {
     if (n === null || n === undefined || !isFinite(n)) return '—';
@@ -298,6 +301,51 @@
     }
 
     renderMacroChart(D, end);
+    renderTrendTraining(D, end);
+
+    $('trendFood').hidden = trendView !== 'food';
+    $('trendTraining').hidden = trendView !== 'training';
+  }
+
+  /* The training half of the Trend page. The Train tab is for logging;
+     this is for looking back, which is a different question and wants a
+     longer window than "today". */
+  function renderTrendTraining(D, end) {
+    var days = [], total = 0, active = 0, sessions = 0, steps = 0;
+    for (var i = 29; i >= 0; i--) {
+      var k = WL.addDays(end, -i);
+      var list = Store.workoutsFor(k);
+      var d = WL.dayTraining(list, D.profile);
+      days.push({ date: k, kcal: d.gross });
+      if (d.gross > 0) { total += d.gross; active++; }
+      list.forEach(function (w) {
+        if (w.kind === 'steps') steps += (w.steps || 0); else sessions++;
+      });
+    }
+    var credit = Math.round(total * WL.EXERCISE_CREDIT);
+
+    $('trainTrendStats').innerHTML = [
+      { k: 'Days trained', v: String(active), n: 'of the last 30' },
+      { k: 'Sessions', v: String(sessions), n: 'not counting steps' },
+      { k: 'Worked off', v: fmt(total), n: 'net calories' },
+      { k: 'Given back', v: '+' + fmt(credit), n: 'as food' }
+    ].map(function (x) {
+      return '<div class="stat"><div class="k">' + esc(x.k) + '</div><div class="v">' + esc(x.v) +
+        '</div><div class="n">' + esc(x.n) + '</div></div>';
+    }).join('');
+
+    $('trainTrendNote').textContent = active
+      ? 'Averaging ' + fmt(total / 30) + ' net calories a day across the month, or ' +
+        fmt(total / Math.max(1, active)) + ' on the days you trained. ' +
+        (steps ? 'Steps over the same period: ' + fmt(steps) + '.' : '')
+      : 'Nothing logged in the last 30 days, so there is nothing to read into yet.';
+
+    $('trainTrendChart').innerHTML = Chart.intake(days, {
+      target: 0, empty: 'Log a session and the days appear here.'
+    });
+    $('trainTrendSummary').textContent = active
+      ? active + ' of 30 days trained'
+      : '';
   }
 
   /* ---------------------------------------------------------------
@@ -357,21 +405,57 @@
      --------------------------------------------------------------- */
 
   function renderFoods() {
-    var foods = Store.foods();
-    $('foodCount').textContent = foods.length;
+    var isRecipe = libKind === 'recipe';
+    var all = Store.foods().filter(function (f) {
+      return (f.kind || 'food') === libKind;
+    });
+
+    $('libTitle').innerHTML = (isRecipe ? 'Your recipes (' : 'Your foods (') +
+      '<span id="foodCount">' + all.length + '</span>)';
+    $('nfTitle').textContent = isRecipe ? 'Add a recipe' : 'Add a food';
+    $('nfServingsRow').hidden = !isRecipe;
+    $('foodFilter').placeholder = isRecipe ? 'Filter by name' : 'Filter by name';
+
+    /* Chips come from what is tagged within THIS tab. Offering a tag
+       that only exists on recipes while looking at foods is a filter
+       that can only ever return nothing. */
+    var counts = {};
+    all.forEach(function (f) {
+      (f.tags || []).forEach(function (t) { counts[t] = (counts[t] || 0) + 1; });
+    });
+    var tags = Object.keys(counts).sort(function (a, b) {
+      return counts[b] - counts[a] || (a < b ? -1 : 1);
+    });
+    if (tagFilter && !counts[tagFilter]) tagFilter = null;
+
+    $('tagFilter').innerHTML = tags.map(function (t) {
+      return '<button class="chip" data-tag="' + esc(t) + '" aria-pressed="' +
+        (tagFilter === t) + '">' + esc(t) + '<span class="n">' + counts[t] + '</span></button>';
+    }).join('');
+
     var q = foodFilterText.toLowerCase();
-    var shown = q ? foods.filter(function (f) { return f.name.toLowerCase().indexOf(q) >= 0; }) : foods;
+    var shown = all.filter(function (f) {
+      if (tagFilter && (f.tags || []).indexOf(tagFilter) < 0) return false;
+      if (q && f.name.toLowerCase().indexOf(q) < 0) return false;
+      return true;
+    });
 
     $('foodLibrary').innerHTML = shown.length ? shown.map(function (f) {
       var t = WL.lineTotals({ kcal: f.kcal, protein: f.protein, carbs: f.carbs, fat: f.fat, qty: 1 });
       var sub = [];
       if (f.serving) sub.push(f.serving);
+      if (isRecipe && f.servings) sub.push('makes ' + fmt(f.servings));
       sub.push(fmt(t.protein) + 'p ' + fmt(t.carbs) + 'c ' + fmt(t.fat) + 'f');
       return '<li><span class="name"><b>' + esc(f.name) + '</b><small>' + esc(sub.join('  ·  ')) +
-        '</small></span><span class="kcal">' + fmt(t.kcal) + '</span>' +
+        '</small>' + ((f.tags || []).length
+          ? '<small class="tags">' + esc(f.tags.join(' · ')) + '</small>' : '') +
+        '</span><span class="kcal">' + fmt(t.kcal) + '</span>' +
         '<button class="btn ghost" data-food-rm="' + esc(f.id) + '" aria-label="Delete">&times;</button></li>';
     }).join('') : '<li><span class="empty" style="flex:1">' +
-      (q ? 'Nothing matches.' : 'Your library is empty. Add the ten things you eat most and you are basically done.') +
+      (q || tagFilter ? 'Nothing matches.'
+        : isRecipe
+          ? 'No recipes yet. A recipe is something you assembled — save it once with what one serving costs.'
+          : 'Your library is empty. Add the ten things you eat most and you are basically done.') +
       '</span></li>';
   }
 
@@ -1237,6 +1321,50 @@
 
   $('dayNote').addEventListener('input', function () { Store.setNote(day, $('dayNote').value); });
 
+  $('trendSeg').addEventListener('click', function (ev) {
+    var b = ev.target.closest('[data-trend]');
+    if (!b) return;
+    trendView = b.dataset.trend;
+    Array.prototype.forEach.call($('trendSeg').children, function (x) {
+      x.setAttribute('aria-pressed', String(x === b));
+    });
+    render();
+    window.scrollTo(0, 0);
+  });
+
+  $('libSeg').addEventListener('click', function (ev) {
+    var b = ev.target.closest('[data-lib]');
+    if (!b) return;
+    libKind = b.dataset.lib;
+    tagFilter = null;
+    Array.prototype.forEach.call($('libSeg').children, function (x) {
+      x.setAttribute('aria-pressed', String(x === b));
+    });
+    $('newFoodCard').hidden = true;
+    renderFoods();
+  });
+
+  $('tagFilter').addEventListener('click', function (ev) {
+    var b = ev.target.closest('[data-tag]');
+    if (!b) return;
+    /* Tapping the active chip clears it — the filter is its own undo. */
+    tagFilter = (tagFilter === b.dataset.tag) ? null : b.dataset.tag;
+    renderFoods();
+  });
+
+  $('addFoodBtn').addEventListener('click', function () {
+    var card = $('newFoodCard');
+    card.hidden = !card.hidden;
+    if (!card.hidden) {
+      ['nfName', 'nfServing', 'nfServings', 'nfKcal', 'nfP', 'nfC', 'nfF', 'nfTags']
+        .forEach(function (id) { $(id).value = ''; });
+      $('nfName').focus();
+      card.scrollIntoView({ block: 'center' });
+    }
+  });
+
+  $('cancelFood').addEventListener('click', function () { $('newFoodCard').hidden = true; });
+
   $('macroSeg').addEventListener('click', function (ev) {
     var b = ev.target.closest('[data-macro]');
     if (!b) return;
@@ -1260,11 +1388,23 @@
   $('saveFood').addEventListener('click', function () {
     var name = $('nfName').value.trim();
     if (!name) { $('nfName').focus(); return; }
+    /* Saving a name that already exists updates it rather than making a
+       second one. Two library rows with the same name are impossible to
+       tell apart at the moment you are picking between them, and the
+       food picker matches by name anyway — so a duplicate is not a
+       choice, it is a coin toss. */
+    var dupe = Store.findFoodByName(name);
     Store.addFood({
+      id: dupe ? dupe.id : undefined,
       name: name, serving: $('nfServing').value.trim(),
+      kind: libKind,
+      servings: libKind === 'recipe' ? num($('nfServings')) : null,
+      tags: $('nfTags').value,
       kcal: num($('nfKcal')), protein: num($('nfP')), carbs: num($('nfC')), fat: num($('nfF'))
     });
-    ['nfName', 'nfServing', 'nfKcal', 'nfP', 'nfC', 'nfF'].forEach(function (id) { $(id).value = ''; });
+    ['nfName', 'nfServing', 'nfServings', 'nfKcal', 'nfP', 'nfC', 'nfF', 'nfTags']
+      .forEach(function (id) { $(id).value = ''; });
+    $('newFoodCard').hidden = true;
     render();
   });
   $('foodFilter').addEventListener('input', function () {

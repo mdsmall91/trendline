@@ -32,6 +32,13 @@ create table if not exists public.foods (
   id         text not null,
   name       text,
   serving    text,
+  -- 'food' or 'recipe'. A recipe is a food you assembled rather than
+  -- bought, so it carries how many servings it makes; everything else
+  -- about it behaves identically, which is why it is a column and not
+  -- a second table.
+  kind       text,
+  servings   double precision,
+  tags       jsonb,
   kcal       double precision,
   protein    double precision,
   carbs      double precision,
@@ -107,6 +114,12 @@ create table if not exists public.workouts (
   synced_at  timestamptz not null default now(),
   primary key (user_id, id)
 );
+
+-- Columns added after the first release. Existing projects re-run this
+-- file and pick them up; a fresh one gets them from the create above.
+alter table public.foods add column if not exists kind     text;
+alter table public.foods add column if not exists servings double precision;
+alter table public.foods add column if not exists tags     jsonb;
 
 -- ---------- pull cursor ----------
 -- Every read is "give me what changed since X", so this index is the

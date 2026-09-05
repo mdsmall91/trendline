@@ -117,6 +117,42 @@
 
   check('workouts are in the synced table list', Sync.TABLE_NAMES.indexOf('workouts') >= 0);
 
+  /* ---------- tags and kinds ---------- */
+
+  eq('tags lower-case so Dinner and dinner are one tag',
+    Store.cleanTags('Dinner, dinner, DINNER').join(','), 'dinner');
+  eq('tags split a comma string', Store.cleanTags('a, b ,c').join(','), 'a,b,c');
+  eq('tags drop blanks', Store.cleanTags('a,,  ,b').join(','), 'a,b');
+  eq('tags accept an array too', Store.cleanTags(['X', 'y']).join(','), 'x,y');
+  eq('no tags is an empty list, never null', Store.cleanTags('').length, 0);
+  eq('null tags is an empty list', Store.cleanTags(null).length, 0);
+
+  var frec = {
+    id: 'f1', name: 'Chili', serving: '1 cup', kcal: 210, protein: 14, carbs: 12, fat: 11,
+    kind: 'recipe', servings: 8, tags: ['dinner', 'batch'],
+    updatedAt: T1, deletedAt: null, dirty: true
+  };
+  var frow = Sync.toRow('foods', frec, 'user-1');
+  eq('food kind goes over the wire', frow.kind, 'recipe');
+  eq('recipe servings go over the wire', frow.servings, 8);
+  check('tags go over as an array', Array.isArray(frow.tags) && frow.tags.length === 2);
+
+  var fback = Sync.fromRow('foods', frow);
+  eq('kind round trips', fback.kind, 'recipe');
+  eq('servings round trip', fback.servings, 8);
+  eq('tags round trip', fback.tags.join(','), 'dinner,batch');
+
+  /* A row written before tags existed comes back with nulls in those
+     columns, and the UI must not have to ask whether a food is old. */
+  var legacy = Sync.fromRow('foods', {
+    id: 'f2', name: 'Old food', serving: '1', kcal: 100,
+    kind: null, servings: null, tags: null, updated_at: T1
+  });
+  check('a pre-tags row reads back with an empty tag list',
+    Array.isArray(legacy.tags) && legacy.tags.length === 0);
+  eq('a pre-tags row defaults to kind food', legacy.kind, 'food');
+  eq('a pre-tags row has no servings', legacy.servings, null);
+
   /* ---------- when to sign someone out ----------
      Signing out is destructive: it costs a password entry, and on a
      phone usually a trip to a password manager. It must happen only

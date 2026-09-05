@@ -31,7 +31,7 @@ var Sync = (function () {
      snake_case, and the list is explicit so an added local field cannot
      accidentally start being written to the server. */
   var TABLES = {
-    foods:    { fields: ['id', 'name', 'serving', 'kcal', 'protein', 'carbs', 'fat'] },
+    foods:    { fields: ['id', 'name', 'serving', 'kcal', 'protein', 'carbs', 'fat', 'kind', 'servings', 'tags'] },
     habits:   { fields: ['id', 'name', 'sort'] },
     days:     { fields: ['id', 'weight', 'note', 'habits'] },
     entries:  { fields: ['id', 'date', 'foodId', 'name', 'qty', 'kcal', 'protein', 'carbs', 'fat'] },
@@ -104,6 +104,14 @@ var Sync = (function () {
     var rec = { deletedAt: row.deleted_at || null, updatedAt: row.updated_at, syncedAt: row.synced_at };
     TABLES[table].fields.forEach(function (f) { rec[f] = row[snake(f)]; });
     if (table === 'days' && (!rec.habits || typeof rec.habits !== 'object')) rec.habits = {};
+    if (table === 'foods') {
+      /* A row written by a device that predates tags comes back with
+         nulls in those columns. Repaired here so the UI never has to
+         ask whether a food is old. */
+      if (!Array.isArray(rec.tags)) rec.tags = [];
+      if (!rec.kind) rec.kind = 'food';
+      if (typeof rec.servings !== 'number') rec.servings = null;
+    }
     return rec;
   }
 

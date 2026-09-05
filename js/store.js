@@ -130,7 +130,7 @@ var Store = (function () {
       version: 2,
       deviceId: obj.deviceId || d.deviceId,
       settings: Object.assign({}, d.settings, obj.settings || {}),
-      foods: obj.foods && typeof obj.foods === 'object' ? obj.foods : {},
+      foods: normalizeFoods(obj.foods),
       habits: obj.habits && typeof obj.habits === 'object' && Object.keys(obj.habits).length
         ? obj.habits : d.habits,
       days: obj.days && typeof obj.days === 'object' ? obj.days : {},
@@ -142,6 +142,21 @@ var Store = (function () {
     };
     if (!out.sync.cursors || typeof out.sync.cursors !== 'object') out.sync.cursors = {};
     return out;
+  }
+
+  /* Foods written before recipes and tags existed have neither field.
+     Filling them in here means the rest of the app can filter and tag
+     without guarding every access. */
+  function normalizeFoods(map) {
+    if (!map || typeof map !== 'object') return {};
+    Object.keys(map).forEach(function (k) {
+      var f = map[k];
+      if (!f || typeof f !== 'object') return;
+      if (!f.kind) f.kind = 'food';
+      if (!Array.isArray(f.tags)) f.tags = [];
+      if (typeof f.servings !== 'number') f.servings = null;
+    });
+    return map;
   }
 
   /* v1 kept food lines in an array on each day and foods/habits in
@@ -481,16 +496,49 @@ var Store = (function () {
     save();
   }
 
+  /* Tags are stored lower-cased and de-duplicated, because "Dinner" and
+     "dinner" filtering as two different things is the kind of small
+     betrayal that makes people stop tagging. */
+  function cleanTags(list) {
+    var out = [], seen = {};
+    (Array.isArray(list) ? list : String(list || '').split(','))
+      .forEach(function (t) {
+        var v = String(t || '').trim().toLowerCase();
+        if (!v || seen[v]) return;
+        seen[v] = 1; out.push(v);
+      });
+    return out;
+  }
+
   function addFood(f) {
     var s = load();
     var id = f.id || uid('f');
+    var prev = s.foods[id];
     s.foods[id] = touch({
       id: id, name: f.name, serving: f.serving || '',
       kcal: f.kcal, protein: f.protein, carbs: f.carbs, fat: f.fat,
+      /* 'food' or 'recipe'. A recipe is something you assembled rather
+         than bought, so it also knows how many servings it makes. */
+      kind: f.kind || (prev && prev.kind) || 'food',
+      servings: (typeof f.servings === 'number' && f.servings > 0) ? f.servings
+        : (prev ? prev.servings : null) || null,
+      tags: f.tags !== undefined ? cleanTags(f.tags) : ((prev && prev.tags) || []),
       deletedAt: null
     });
     save();
     return s.foods[id];
+  }
+
+  /* Every tag in use, with how many foods carry it. Sorted by use, so
+     the chips you reach for most are the ones nearest the front. */
+  function allTags() {
+    var counts = {};
+    foods().forEach(function (f) {
+      (f.tags || []).forEach(function (t) { counts[t] = (counts[t] || 0) + 1; });
+    });
+    return Object.keys(counts).sort(function (a, b) {
+      return counts[b] - counts[a] || (a < b ? -1 : 1);
+    }).map(function (t) { return { tag: t, count: counts[t] }; });
   }
 
   function removeFood(id) {
@@ -590,6 +638,7 @@ var Store = (function () {
     setWeight: setWeight, setNote: setNote, setHabit: setHabit,
     addEntry: addEntry, updateEntry: updateEntry, entry: entry, removeEntry: removeEntry,
     addFood: addFood, removeFood: removeFood, findFoodByName: findFoodByName,
+    allTags: allTags, cleanTags: cleanTags,
     addHabit: addHabit, removeHabit: removeHabit, setSetting: setSetting,
     exportJSON: exportJSON, importJSON: importJSON, reset: reset, clearLocal: clearLocal
   };

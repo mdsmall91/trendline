@@ -390,3 +390,24 @@ code {
   color: inherit; font: inherit; cursor: pointer;
 }
 .list .rowedit:hover .name b { color: var(--accent); }
+
+/* Tag chips. A filter you can hit with a thumb, showing what is actually
+   in use rather than a free-text box you have to remember the spelling
+   for — tags nobody can find again are tags nobody keeps adding. */
+.tagbar { display: flex; flex-wrap: wrap; gap: var(--s-2); margin: var(--s-2) 0 var(--s-3); }
+.tagbar:empty { display: none; }
+.chip {
+  appearance: none; cursor: pointer;
+  border: var(--hairline); background: var(--surface); color: var(--text-muted);
+  font: inherit; font-size: 0.75rem; padding: 4px 10px; border-radius: 999px;
+  white-space: nowrap;
+}
+.chip[aria-pressed="true"] {
+  background: var(--accent-soft); border-color: var(--accent); color: var(--accent);
+}
+.chip .n { opacity: 0.6; margin-left: 4px; font-family: var(--font-mono); }
+
+/* Tags on a library row, shown as plain text — they are context here,
+   not controls, and a second set of tappable chips in a list row is
+   noise competing with the row itself. */
+.list .tags { color: var(--text-faint); font-size: 0.6875rem; }
