@@ -157,6 +157,86 @@
 
 </section>
 
+<!-- ============================ TRAIN ============================ -->
+<section class="panel" id="panel-train" role="tabpanel" aria-labelledby="tab-train">
+
+  <div class="card">
+    <h2>Steps</h2>
+    <div class="row">
+      <label class="field" style="margin:0">
+        <span class="sr">Steps today</span>
+        <input type="number" id="stepsInput" inputmode="numeric" step="100" min="0" placeholder="e.g. 8400">
+      </label>
+      <button class="btn grow-0" id="saveSteps">Save</button>
+    </div>
+    <div class="hint" id="stepsHint"></div>
+  </div>
+
+  <div class="card">
+    <h2>Sessions</h2>
+    <ul class="list" id="workoutLog"></ul>
+    <div class="seg" id="kindSeg" style="margin:var(--s-4) 0 var(--s-3)">
+      <button data-kind="cardio" aria-pressed="true">Cardio</button>
+      <button data-kind="lifting" aria-pressed="false">Lifting</button>
+    </div>
+
+    <div id="cardioFields">
+      <label class="field"><span>Activity</span>
+        <select id="woActivity">
+          <option value="walk_easy">Walk — easy</option>
+          <option value="walk_brisk">Walk — brisk</option>
+          <option value="hike">Hike</option>
+          <option value="jog">Jog</option>
+          <option value="run">Run</option>
+          <option value="cycle_easy">Bike — easy</option>
+          <option value="cycle_hard">Bike — hard</option>
+          <option value="swim">Swim</option>
+          <option value="row">Row</option>
+          <option value="elliptical">Elliptical</option>
+          <option value="stairs">Stairs</option>
+          <option value="other">Something else</option>
+        </select></label>
+    </div>
+
+    <div id="liftingFields" hidden>
+      <div class="row">
+        <label class="field"><span>Session name</span>
+          <input type="text" id="woName" placeholder="Push day"></label>
+        <label class="field grow-0" style="width:150px"><span>Effort</span>
+          <select id="woIntensity">
+            <option value="lift_moderate">Moderate</option>
+            <option value="lift_hard">Hard</option>
+          </select></label>
+      </div>
+      <label class="field"><span>What you did (one exercise per line)</span>
+        <textarea id="woSets" rows="4" placeholder="Bench 3x8 185&#10;Squat 5x5 225&#10;Pullups 3x10"></textarea></label>
+    </div>
+
+    <div class="row">
+      <label class="field"><span>Minutes</span>
+        <input type="number" id="woMinutes" inputmode="numeric" step="5" min="0" placeholder="45"></label>
+      <label class="field"><span>Calories (optional)</span>
+        <input type="number" id="woKcal" inputmode="numeric" placeholder="from your watch"></label>
+    </div>
+    <button class="btn primary" id="addWorkout">Add session</button>
+    <div class="hint">Leave calories blank and they're worked out from the activity, the minutes and your
+      weight. A figure from a chest strap or watch beats any estimate, so if you have one it wins.</div>
+  </div>
+
+  <div class="card">
+    <h2>What it buys you</h2>
+    <div class="stats" id="trainStats"></div>
+    <div class="note plain" id="trainNote"></div>
+  </div>
+
+  <div class="card">
+    <h2>Last 30 days</h2>
+    <div id="trainChart"></div>
+    <div class="hint" id="trainSummary"></div>
+  </div>
+
+</section>
+
 <!-- ============================ FOODS ============================ -->
 <section class="panel" id="panel-foods" role="tabpanel" aria-labelledby="tab-foods">
 
@@ -292,6 +372,7 @@
 <nav class="tabs" role="tablist" aria-label="Sections">
   <button id="tab-today"    role="tab" data-tab="today"    aria-selected="true"  aria-controls="panel-today">Today</button>
   <button id="tab-trend"    role="tab" data-tab="trend"    aria-selected="false" aria-controls="panel-trend">Trend</button>
+  <button id="tab-train"    role="tab" data-tab="train"    aria-selected="false" aria-controls="panel-train">Train</button>
   <button id="tab-foods"    role="tab" data-tab="foods"    aria-selected="false" aria-controls="panel-foods">Foods</button>
   <button id="tab-habits"   role="tab" data-tab="habits"   aria-selected="false" aria-controls="panel-habits">Habits</button>
   <button id="tab-settings" role="tab" data-tab="settings" aria-selected="false" aria-controls="panel-settings">Setup</button>

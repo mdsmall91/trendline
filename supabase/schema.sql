@@ -86,6 +86,28 @@ create table if not exists public.entries (
   primary key (user_id, id)
 );
 
+-- one training session. Steps are a session too: a day's step count has
+-- a start and an end, and giving it a kind keeps the calorie maths in
+-- one place. `sets` is free-form lifting detail (exercise/sets/reps/
+-- weight) that the calorie estimate deliberately does not read.
+create table if not exists public.workouts (
+  user_id    uuid not null default auth.uid() references auth.users on delete cascade,
+  id         text not null,
+  date       text not null,
+  kind       text,
+  activity   text,
+  name       text,
+  minutes    double precision,
+  steps      double precision,
+  kcal       double precision,
+  sets       jsonb,
+  created_at timestamptz,
+  updated_at timestamptz not null,
+  deleted_at timestamptz,
+  synced_at  timestamptz not null default now(),
+  primary key (user_id, id)
+);
+
 -- ---------- pull cursor ----------
 -- Every read is "give me what changed since X", so this index is the
 -- one that matters.
@@ -96,6 +118,8 @@ create index if not exists habits_cursor_idx   on public.habits   (user_id, sync
 create index if not exists days_cursor_idx     on public.days     (user_id, synced_at);
 create index if not exists entries_cursor_idx  on public.entries  (user_id, synced_at);
 create index if not exists entries_date_idx    on public.entries  (user_id, date);
+create index if not exists workouts_cursor_idx on public.workouts (user_id, synced_at);
+create index if not exists workouts_date_idx   on public.workouts (user_id, date);
 
 -- synced_at must be server-set on every write, including upserts that
 -- arrive with a stale value in the payload.
@@ -109,7 +133,7 @@ end $$;
 do $$
 declare t text;
 begin
-  foreach t in array array['settings','foods','habits','days','entries'] loop
+  foreach t in array array['settings','foods','habits','days','entries','workouts'] loop
     execute format('drop trigger if exists %I_touch on public.%I', t, t);
     execute format(
       'create trigger %I_touch before insert or update on public.%I
@@ -126,11 +150,12 @@ alter table public.foods    enable row level security;
 alter table public.habits   enable row level security;
 alter table public.days     enable row level security;
 alter table public.entries  enable row level security;
+alter table public.workouts enable row level security;
 
 do $$
 declare t text;
 begin
-  foreach t in array array['settings','foods','habits','days','entries'] loop
+  foreach t in array array['settings','foods','habits','days','entries','workouts'] loop
     execute format('drop policy if exists own_rows on public.%I', t);
     execute format(
       'create policy own_rows on public.%I

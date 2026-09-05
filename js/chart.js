@@ -125,7 +125,7 @@ var Chart = (function () {
   function intake(days, opts) {
     opts = opts || {};
     if (!days || !days.length) {
-      return '<p class="empty">Log some food and the days appear here.</p>';
+      return '<p class="empty">' + esc(opts.empty || 'Log some food and the days appear here.') + '</p>';
     }
     var target = opts.target || 0;
     var maxV = Math.max(target * 1.25, 1);

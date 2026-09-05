@@ -31,12 +31,13 @@ var Sync = (function () {
      snake_case, and the list is explicit so an added local field cannot
      accidentally start being written to the server. */
   var TABLES = {
-    foods:   { fields: ['id', 'name', 'serving', 'kcal', 'protein', 'carbs', 'fat'] },
-    habits:  { fields: ['id', 'name', 'sort'] },
-    days:    { fields: ['id', 'weight', 'note', 'habits'] },
-    entries: { fields: ['id', 'date', 'foodId', 'name', 'qty', 'kcal', 'protein', 'carbs', 'fat'] }
+    foods:    { fields: ['id', 'name', 'serving', 'kcal', 'protein', 'carbs', 'fat'] },
+    habits:   { fields: ['id', 'name', 'sort'] },
+    days:     { fields: ['id', 'weight', 'note', 'habits'] },
+    entries:  { fields: ['id', 'date', 'foodId', 'name', 'qty', 'kcal', 'protein', 'carbs', 'fat'] },
+    workouts: { fields: ['id', 'date', 'kind', 'activity', 'name', 'minutes', 'steps', 'kcal', 'sets', 'createdAt'] }
   };
-  var TABLE_NAMES = ['foods', 'habits', 'days', 'entries'];
+  var TABLE_NAMES = ['foods', 'habits', 'days', 'entries', 'workouts'];
 
   function snake(s) { return s.replace(/[A-Z]/g, function (c) { return '_' + c.toLowerCase(); }); }
   function camel(s) { return s.replace(/_([a-z])/g, function (_, c) { return c.toUpperCase(); }); }

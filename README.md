@@ -123,7 +123,7 @@ use and this is about 200 lines.
 
 ---
 
-## The four things it does
+## The six things it does
 
 **1. Trend weight, not weigh-ins.** A single reading is mostly water,
 sodium and gut contents; a real 180lb body swings 3–4lb for reasons that
@@ -167,6 +167,53 @@ promise.
 tolerate an unlogged today, because a streak that breaks at 00:01 every
 morning trains you to stop looking at it.
 
+**5. Food lookup.** Barcode scanning against Open Food Facts (no API key)
+and name search against USDA FoodData Central (free key, optional). Anything
+looked up is written into your library, so the second time you eat it there
+is no network call — the library is the cache and there is no second one.
+Manual entry never went anywhere; lookup just saves the typing.
+
+Servings are the hard part, not nutrients. Every source states per-100g,
+only some state per-serving, and "serving" means whatever the manufacturer
+decided. So the app keeps both, and where a source gives no serving the
+label reads `100 g` rather than an unmarked `1`. Two specific traps it
+handles, both found in live responses:
+
+- USDA Foundation foods carry protein, fat and carbohydrate and **no energy
+  field at all**. Calories are derived with Atwater factors and the row says
+  `cal from macros`, so the number is trusted for the right reason.
+- A USDA serving of "1 cup" with no gram weight cannot be scaled from
+  per-100g values. Scaling it anyway is how a calorie count silently
+  triples, so it stays at 100g and says so.
+
+**6. Training, and the 2:1 rule.** Steps, cardio and lifting sessions.
+Calories are estimated from METs and bodyweight, or taken from a
+hand-entered figure if you have one — a chest strap beats any table, and an
+estimate that silently overrides a measurement is worse than no estimate.
+
+Every figure is **net**: what the activity cost above sitting still for the
+same minutes. An hour of lifting is ~600 gross calories for a 200lb man, but
+~100 of those would have burned anyway and the TDEE estimate already counts
+them. Gross numbers are how exercise trackers hand people a second dinner.
+
+Half of what you work off comes back as food. The other half is deliberate
+margin: MET tables assume a textbook pace, step counters over-count, and
+neither knows you sat down for four minutes between sets. The ratio lives in
+one constant, `WL.EXERCISE_CREDIT`.
+
+The credit is **not** fed back into the adaptive TDEE. That estimate
+measures what your body actually did with the food it got, training
+included; adding an allowance into the measurement would make the
+measurement chase itself. The credit belongs to the day's budget, not to the
+metabolism — and it self-corrects anyway. Eat the credit, and if it was too
+generous the trend slows, the measured burn falls, and the target comes down
+on its own.
+
+Lifting detail is typed one exercise per line — `Bench 3x8 185` — because a
+structured form with four inputs per exercise is six taps a set on a phone,
+which is how a training log stops getting filled in. Sets and reps are a
+record of what you did; they deliberately do not move the calorie number.
+
 ---
 
 ## Honesty rules
@@ -189,36 +236,47 @@ number you stop trusting in week three.
 ## Files
 
 ```
-index.html              shell — five panels
+index.html              shell — six panels
 config.js               your Supabase URL + anon key (empty = sync off,
-                        and it can be set in the app instead)
+                        and it can be set in the app instead), plus an
+                        optional USDA key for food search
 js/core.js              the engine. Pure functions, no DOM, no storage.
 js/store.js             local-first storage, v1 migration, dirty tracking
 js/sync.js              merge logic + Supabase REST/auth over plain fetch
+js/foodapi.js           Open Food Facts + USDA normalizers and lookups
+js/scanner.js           camera barcode scanning, wrapping the vendored lib
 js/chart.js             hand-rolled SVG. No charting library.
 js/ui.js                render-on-change
 styles/app.css          self-contained tokens, light + dark
 sw.js                   offline shell. Only caches same-origin assets —
                         a cached sync response would be worse than none.
+vendor/                 html5-qrcode, vendored rather than CDN-loaded so
+                        scanning still works with no signal. Lazy-loaded.
 supabase/schema.sql     tables, indexes, RLS policies
 SETUP.md                Supabase walkthrough
-tests/                  131 assertions
+tests/                  241 assertions
 ```
 
 ## Tests
 
 ```
-node tests/tests.js         # 67 — the engine
-node tests/sync-tests.js    # 64 — merge logic, migration, key safety
+node tests/tests.js         # 106 — the engine, incl. training calories
+node tests/sync-tests.js    # 64  — merge logic, migration, key safety
+node tests/food-tests.js    # 71  — food lookup normalizers, no network
 ```
 
-Or open `tests/tests.html` and `tests/sync-tests.html` in a browser.
+Or open `tests/tests.html`, `tests/sync-tests.html` and
+`tests/food-tests.html` in a browser.
 
 The two that matter most:
 
 - **End-to-end engine:** a synthetic body with a true TDEE of 2600 eating
   2100/day is fed in as noisy weigh-ins, and the estimator has to recover
   ~2600 and set a target within 150 calories of truth.
+- **The 2:1 rule holds exactly:** the credit is half of the burn *as
+  displayed*, not half of the unrounded figure. Rounding in the wrong order
+  puts the two numbers on screen a calorie apart, and the first person to
+  check the arithmetic stops trusting both.
 - **Two-device convergence:** two devices log different meals on the same
   day while offline, then edit the same record, then one deletes. Both must
   end up identical, with nothing lost and nothing resurrected — and a third

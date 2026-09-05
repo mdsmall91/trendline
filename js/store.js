@@ -15,6 +15,7 @@
      habits    { id: record }    habit definitions
      days      { date: record }  weight, note, habit ticks
      entries   { id: record }    one logged food line
+     workouts  { id: record }    one training session or step count
 
    Food lines are their own records rather than an array inside the
    day. If they lived on the day, logging breakfast on your phone and
@@ -74,7 +75,7 @@ var Store = (function () {
       version: 2,
       deviceId: uid('dev'),
       settings: defaultSettings(),
-      foods: {}, habits: defaultHabits(), days: {}, entries: {},
+      foods: {}, habits: defaultHabits(), days: {}, entries: {}, workouts: {},
       sync: { userId: null, email: null, cursors: {}, lastSyncAt: null, lastError: null }
     };
   }
@@ -134,6 +135,9 @@ var Store = (function () {
         ? obj.habits : d.habits,
       days: obj.days && typeof obj.days === 'object' ? obj.days : {},
       entries: obj.entries && typeof obj.entries === 'object' ? obj.entries : {},
+      /* Absent in payloads written before training existed. An older
+         device syncing up must not have its file rejected for it. */
+      workouts: obj.workouts && typeof obj.workouts === 'object' ? obj.workouts : {},
       sync: Object.assign({}, d.sync, obj.sync || {})
     };
     if (!out.sync.cursors || typeof out.sync.cursors !== 'object') out.sync.cursors = {};
@@ -314,6 +318,7 @@ var Store = (function () {
         (d.habits && Object.keys(d.habits).length))) set[k] = 1;
     });
     alive(s.entries).forEach(function (e) { set[e.date] = 1; });
+    alive(s.workouts).forEach(function (w) { set[w.date] = 1; });
     return Object.keys(set).sort();
   }
 
@@ -362,6 +367,79 @@ var Store = (function () {
     if (!s.entries[id]) return;
     s.entries[id].deletedAt = now();
     touch(s.entries[id]);
+    save();
+  }
+
+  /* ---------------------------------------------------------------
+     WORKOUTS
+
+     One record per session, and steps are a session too — a day's step
+     count is a thing that happened, with a start and an end, and giving
+     it its own kind keeps the calorie maths in one place instead of
+     scattering a special case through the UI.
+
+     Only one steps record per day is meaningful (the count is
+     cumulative, so two of them would double-count), so writing steps
+     replaces the day's existing steps record rather than adding to it.
+     Sessions have no such rule: three walks in a day are three walks.
+     --------------------------------------------------------------- */
+
+  function workoutsFor(date) {
+    return alive(load().workouts).filter(function (w) { return w.date === date; })
+      .sort(function (a, b) { return (a.createdAt || '') < (b.createdAt || '') ? -1 : 1; });
+  }
+
+  function addWorkout(date, w) {
+    var s = load();
+    var id = uid('w');
+    s.workouts[id] = touch({
+      id: id, date: date,
+      kind: w.kind || 'cardio',
+      activity: w.activity || null,
+      name: w.name || '',
+      minutes: typeof w.minutes === 'number' ? w.minutes : null,
+      steps: typeof w.steps === 'number' ? w.steps : null,
+      kcal: typeof w.kcal === 'number' ? w.kcal : null,
+      sets: Array.isArray(w.sets) ? w.sets : null,
+      createdAt: now(),
+      deletedAt: null
+    });
+    save();
+    return s.workouts[id];
+  }
+
+  function setSteps(date, steps) {
+    var s = load();
+    var existing = null;
+    alive(s.workouts).forEach(function (w) {
+      if (w.date === date && w.kind === 'steps') existing = w;
+    });
+    var n = (typeof steps === 'number' && isFinite(steps) && steps > 0) ? steps : null;
+
+    if (existing) {
+      if (n === null) { existing.deletedAt = now(); touch(existing); save(); return null; }
+      existing.steps = n;
+      touch(existing);
+      save();
+      return existing;
+    }
+    if (n === null) return null;
+    return addWorkout(date, { kind: 'steps', steps: n, name: 'Steps' });
+  }
+
+  function stepsOn(date) {
+    var found = null;
+    alive(load().workouts).forEach(function (w) {
+      if (w.date === date && w.kind === 'steps') found = w;
+    });
+    return found;
+  }
+
+  function removeWorkout(id) {
+    var s = load();
+    if (!s.workouts[id]) return;
+    s.workouts[id].deletedAt = now();
+    touch(s.workouts[id]);
     save();
   }
 
@@ -437,7 +515,7 @@ var Store = (function () {
     /* Cursors are reset so the next pull re-reads the whole cloud copy
        and reconciles it against what was just imported. */
     next.sync = { userId: keepSync.userId, email: keepSync.email, cursors: {}, lastSyncAt: null, lastError: null };
-    ['foods', 'habits', 'days', 'entries'].forEach(function (c) {
+    ['foods', 'habits', 'days', 'entries', 'workouts'].forEach(function (c) {
       Object.keys(next[c]).forEach(function (k) { next[c][k].dirty = true; });
     });
     next.settings.dirty = true;
@@ -468,6 +546,8 @@ var Store = (function () {
     settings: settings, sync: sync, deviceId: deviceId,
     foods: foods, habits: habits, day: day, peekDay: peekDay,
     entriesFor: entriesFor, engineEntries: engineEntries,
+    workoutsFor: workoutsFor, addWorkout: addWorkout, removeWorkout: removeWorkout,
+    setSteps: setSteps, stepsOn: stepsOn,
     weightPoints: weightPoints, intakeMap: intakeMap, loggedDates: loggedDates,
     setWeight: setWeight, setNote: setNote, setHabit: setHabit,
     addEntry: addEntry, removeEntry: removeEntry,

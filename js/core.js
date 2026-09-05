@@ -319,6 +319,176 @@ var WL = (function () {
   }
 
   /* ---------------------------------------------------------------
+     TRAINING
+
+     Everything here returns NET calories — the cost of the activity
+     above what the body would have spent sitting still for the same
+     minutes. That subtraction is not a detail. An hour of lifting at
+     6 METs is ~600 gross calories for a 200lb man, but ~100 of those
+     would have been burned anyway, and the TDEE estimate above already
+     counts them. Gross numbers are how exercise trackers end up
+     handing people a second dinner.
+
+     The compendium MET values below are the published ones. They are
+     population averages applied to an individual, which is the reason
+     the credit exists at all — see EXERCISE_CREDIT.
+     --------------------------------------------------------------- */
+
+  /* Fraction of measured burn that is handed back as extra food.
+
+     Every estimate of exercise burn runs high: MET tables assume a
+     textbook pace, step counters over-count, and none of it knows that
+     you sat down for four minutes between sets. Returning half is a
+     deliberate haircut against that, and it is the number to change if
+     the trend later says the loop is running hot or cold. */
+  var EXERCISE_CREDIT = 0.5;
+
+  /* kcal/min = MET x 3.5 x kg / 200 is the standard conversion. The
+     (met - 1) is the net correction described above. */
+  function metKcal(met, minutes, weightLb) {
+    var m = Number(met), min = Number(minutes), lb = Number(weightLb);
+    if (!isFinite(m) || !isFinite(min) || !isFinite(lb)) return 0;
+    if (m <= 1 || min <= 0 || lb <= 0) return 0;
+    var kg = lb * 0.45359237;
+    return (m - 1) * 3.5 * kg / 200 * min;
+  }
+
+  var MET = {
+    walk_easy:    3.0,
+    walk_brisk:   4.3,
+    hike:         6.0,
+    jog:          7.0,
+    run:          9.8,
+    cycle_easy:   5.8,
+    cycle_hard:   8.0,
+    swim:         7.0,
+    row:          7.0,
+    elliptical:   5.0,
+    stairs:       8.8,
+    lift_moderate: 3.5,
+    lift_hard:     6.0,
+    other:        5.0
+  };
+
+  /* Steps -> net calories.
+
+     Stride length is estimated from height (0.415 is the standard
+     walking factor), distance follows, and the cost per kg per km comes
+     out of the same MET arithmetic as everything else: walking at 3mph
+     is 3.0 METs, which works out at roughly 0.53 net kcal per kg per km.
+
+     Using height rather than a fixed stride matters more than it looks:
+     a 5'4" and a 6'2" person walking the same 10,000 steps cover
+     distances that differ by about 20%. */
+  var NET_KCAL_PER_KG_KM = 0.53;
+  var STRIDE_FACTOR = 0.415;
+
+  function stepsKcal(steps, profile) {
+    var n = Number(steps);
+    if (!isFinite(n) || n <= 0) return 0;
+    var p = profile || {};
+    var lb = Number(p.weightLb), inches = Number(p.heightIn);
+    if (!isFinite(lb) || lb <= 0) return 0;
+    if (!isFinite(inches) || inches <= 0) inches = 68;
+    var strideM = inches * 0.0254 * STRIDE_FACTOR;
+    var km = (n * strideM) / 1000;
+    return NET_KCAL_PER_KG_KM * (lb * 0.45359237) * km;
+  }
+
+  /* One logged session -> net calories.
+
+     A hand-entered figure always wins. Someone wearing a chest strap
+     has better information than a MET table does, and an estimate that
+     silently overrides a measurement is worse than no estimate. */
+  function workoutKcal(w, profile) {
+    if (!w) return 0;
+    var manual = Number(w.kcal);
+    if (isFinite(manual) && manual > 0) return manual;
+    var p = profile || {};
+    if (w.kind === 'steps') return stepsKcal(w.steps, p);
+    var met = MET[w.activity];
+    if (!isFinite(met)) met = MET.other;
+    return metKcal(met, w.minutes, p.weightLb);
+  }
+
+  /* Lifting detail, typed the way people actually write it down.
+
+     One exercise per line: "Bench 3x8 185". A structured form with
+     four inputs per exercise is six taps a set on a phone, which is
+     how a training log stops getting filled in. Parsing is deliberately
+     lenient — the weight is optional, the separator can be x or X, and
+     anything unrecognised is kept as a plain name rather than dropped.
+
+     None of this feeds the calorie estimate. Sets and reps are a record
+     of what you did; minutes and intensity are what the burn is
+     computed from, and pretending otherwise would invent precision. */
+  function parseSets(text) {
+    var lines = String(text || '').split('\n');
+    var out = [];
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i].trim();
+      if (!line) continue;
+      /* name, then optional "SETSxREPS", then optional weight */
+      var m = line.match(/^(.*?)\s*(\d+)\s*[xX*]\s*(\d+)\s*([\d.]+)?\s*(lb|kg)?\s*$/);
+      if (m && m[1]) {
+        out.push({
+          exercise: m[1].trim(),
+          sets: Number(m[2]),
+          reps: Number(m[3]),
+          weight: m[4] === undefined ? null : Number(m[4]),
+          unit: m[5] ? m[5].toLowerCase() : 'lb'
+        });
+      } else {
+        out.push({ exercise: line, sets: null, reps: null, weight: null, unit: 'lb' });
+      }
+    }
+    return out;
+  }
+
+  function setsToText(sets) {
+    return (sets || []).map(function (s) {
+      if (!s.sets || !s.reps) return s.exercise;
+      return s.exercise + ' ' + s.sets + 'x' + s.reps +
+        (s.weight === null || s.weight === undefined ? '' : ' ' + s.weight);
+    }).join('\n');
+  }
+
+  /* Total weight moved: sets x reps x load, summed. Zero for bodyweight
+     work, which is honest — this measures external load, not effort. */
+  function setsVolume(sets) {
+    var v = 0;
+    (sets || []).forEach(function (s) {
+      if (s.sets && s.reps && s.weight) v += s.sets * s.reps * s.weight;
+    });
+    return v;
+  }
+
+  /* Everything logged on one day, and what it buys.
+
+     gross  net-of-resting calories actually worked off
+     credit what gets added to the day's food allowance
+
+     They are kept separate on purpose. The credit is a policy choice
+     and belongs in the target; the burn is a measurement and belongs
+     in the record. Blending them would make it impossible to change
+     the policy later without rewriting history. */
+  function dayTraining(workouts, profile) {
+    var list = workouts || [];
+    var raw = 0;
+    for (var i = 0; i < list.length; i++) raw += workoutKcal(list[i], profile);
+    /* Round the burn first, then halve the rounded figure. Halving the
+       raw value instead puts the credit one calorie away from half of
+       the number on screen, and the first person to check the
+       arithmetic stops trusting both numbers. */
+    var gross = Math.round(raw);
+    return {
+      count: list.length,
+      gross: gross,
+      credit: Math.round(gross * EXERCISE_CREDIT)
+    };
+  }
+
+  /* ---------------------------------------------------------------
      HABITS
 
      Streaks intentionally tolerate "today not logged yet" — a streak that
@@ -378,6 +548,10 @@ var WL = (function () {
   return {
     KCAL_PER_LB: KCAL_PER_LB,
     ACTIVITY: ACTIVITY,
+    MET: MET, EXERCISE_CREDIT: EXERCISE_CREDIT,
+    metKcal: metKcal, stepsKcal: stepsKcal,
+    workoutKcal: workoutKcal, dayTraining: dayTraining,
+    parseSets: parseSets, setsToText: setsToText, setsVolume: setsVolume,
     toKey: toKey, fromKey: fromKey, addDays: addDays,
     daysBetween: daysBetween, todayKey: todayKey,
     trendSeries: trendSeries, trendAt: trendAt, trendRate: trendRate,

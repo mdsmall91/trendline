@@ -219,6 +219,102 @@
   check('end to end target within 150 of truth', Math.abs(e2eTarget.target - (TRUE_TDEE - 500)) < 150,
     e2eTarget.target);
 
+  /* ---------- training ---------- */
+
+  var lifter = { weightLb: 200, heightIn: 70 };
+  var kg200 = 200 * 0.45359237;   /* 90.72 kg */
+
+  /* kcal/min = MET x 3.5 x kg / 200, minus one MET for the resting
+     burn that the TDEE estimate already counts. */
+  near('metKcal is net of resting', WL.metKcal(6, 60, 200), (6 - 1) * 3.5 * kg200 / 200 * 60, 0.5);
+  check('metKcal at 1 MET is zero, not negative', WL.metKcal(1, 60, 200) === 0);
+  check('metKcal below 1 MET is zero', WL.metKcal(0.5, 60, 200) === 0);
+  check('metKcal with no minutes is zero', WL.metKcal(6, 0, 200) === 0);
+  check('metKcal with no weight is zero', WL.metKcal(6, 60, 0) === 0);
+  check('metKcal ignores junk', WL.metKcal(6, 'abc', 200) === 0);
+
+  /* An hour of hard lifting must not come out anywhere near the gross
+     figure a fitness tracker would show — that gap is the whole point. */
+  var grossHour = 6 * 3.5 * kg200 / 200 * 60;
+  check('an hour of lifting is well under the gross figure',
+    WL.metKcal(6, 60, 200) < grossHour - 90, WL.metKcal(6, 60, 200));
+
+  /* Steps: 10,000 at 70in and 200lb should land in the range every
+     step counter and calculator agrees on, roughly 300-400 net. */
+  var s10k = WL.stepsKcal(10000, lifter);
+  check('10k steps lands in a defensible range', s10k > 300 && s10k < 400, s10k);
+  check('zero steps is zero', WL.stepsKcal(0, lifter) === 0);
+  check('negative steps is zero', WL.stepsKcal(-500, lifter) === 0);
+  check('steps need a weight', WL.stepsKcal(10000, { heightIn: 70 }) === 0);
+
+  /* Height matters: a taller person covers more ground per step. */
+  var shortWalk = WL.stepsKcal(10000, { weightLb: 200, heightIn: 62 });
+  var tallWalk = WL.stepsKcal(10000, { weightLb: 200, heightIn: 76 });
+  check('taller stride burns more over the same step count', tallWalk > shortWalk * 1.15,
+    tallWalk + ' vs ' + shortWalk);
+  check('missing height falls back rather than zeroing',
+    WL.stepsKcal(10000, { weightLb: 200 }) > 0);
+
+  /* Heavier costs more over the same distance. */
+  check('heavier burns more per step',
+    WL.stepsKcal(10000, { weightLb: 250, heightIn: 70 }) > s10k);
+
+  /* A hand-entered figure beats any estimate. */
+  check('manual calories win over the MET estimate',
+    WL.workoutKcal({ kind: 'cardio', activity: 'run', minutes: 60, kcal: 412 }, lifter) === 412);
+  check('manual zero does not win (blank, not "no calories")',
+    WL.workoutKcal({ kind: 'cardio', activity: 'run', minutes: 60, kcal: 0 }, lifter) > 0);
+  check('unknown activity falls back to a middling MET',
+    WL.workoutKcal({ kind: 'cardio', activity: 'quidditch', minutes: 30 }, lifter) > 0);
+  check('a steps record routes to the steps model',
+    Math.abs(WL.workoutKcal({ kind: 'steps', steps: 10000 }, lifter) - s10k) < 0.001);
+
+  /* ---------- the 2:1 rule ----------
+     Locked: half of what is worked off comes back as food. */
+  var dayW = [
+    { kind: 'steps', steps: 8000 },
+    { kind: 'cardio', activity: 'jog', minutes: 30 },
+    { kind: 'lifting', activity: 'lift_hard', minutes: 45 }
+  ];
+  var dt = WL.dayTraining(dayW, lifter);
+  check('credit is exactly half the burn', dt.credit === Math.round(dt.gross * 0.5),
+    dt.credit + ' of ' + dt.gross);
+  check('the credit ratio is the locked one', WL.EXERCISE_CREDIT === 0.5);
+  check('day training counts its sessions', dt.count === 3);
+  check('an empty day is zero, not null',
+    WL.dayTraining([], lifter).gross === 0 && WL.dayTraining([], lifter).credit === 0);
+  check('no workouts at all is zero', WL.dayTraining(null, lifter).credit === 0);
+  check('a day of training is worth something but not a meal',
+    dt.credit > 100 && dt.credit < 500, dt.credit);
+
+  /* ---------- lifting detail ---------- */
+
+  var sets = WL.parseSets('Bench 3x8 185\nSquat 5x5 225\nPullups 3x10\n\n  Face pulls  ');
+  check('parses four lines, blank ignored', sets.length === 4, sets.length);
+  check('parses exercise', sets[0].exercise === 'Bench', sets[0].exercise);
+  check('parses sets and reps', sets[0].sets === 3 && sets[0].reps === 8);
+  check('parses weight', sets[0].weight === 185);
+  check('bodyweight work has no weight', sets[2].weight === null && sets[2].reps === 10);
+  check('a bare name still survives', sets[3].exercise === 'Face pulls' && sets[3].sets === null);
+  check('capital X works too', WL.parseSets('Row 4X12 95')[0].reps === 12);
+  check('multi-word exercise names survive',
+    WL.parseSets('Incline dumbbell press 3x10 60')[0].exercise === 'Incline dumbbell press');
+  check('decimal weight parses', WL.parseSets('Curl 3x10 22.5')[0].weight === 22.5);
+  check('empty text gives no sets', WL.parseSets('').length === 0);
+  check('null text gives no sets', WL.parseSets(null).length === 0);
+
+  near('volume is sets x reps x load', WL.setsVolume(sets), 3 * 8 * 185 + 5 * 5 * 225, 0.001);
+  check('bodyweight adds nothing to volume',
+    WL.setsVolume([{ sets: 3, reps: 10, weight: null }]) === 0);
+  check('sets round trip through text',
+    WL.parseSets(WL.setsToText(sets))[0].weight === 185);
+
+  /* Sets must never move the calorie number — minutes and intensity do. */
+  var withSets = { kind: 'lifting', activity: 'lift_hard', minutes: 45, sets: sets };
+  var without = { kind: 'lifting', activity: 'lift_hard', minutes: 45 };
+  check('lifting detail does not change the burn',
+    WL.workoutKcal(withSets, lifter) === WL.workoutKcal(without, lifter));
+
   var summary = { passes: passes, failures: failures.length, detail: failures };
   root.__results = summary;
   if (typeof document !== 'undefined') {

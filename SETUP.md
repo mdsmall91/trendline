@@ -35,8 +35,14 @@ Provisioning takes a couple of minutes.
 
 You want `Success. No rows returned`.
 
-Then check **Table Editor**. You should see five tables — `settings`,
-`foods`, `habits`, `days`, `entries` — each marked **RLS enabled**.
+Then check **Table Editor**. You should see six tables — `settings`,
+`foods`, `habits`, `days`, `entries`, `workouts` — each marked **RLS
+enabled**.
+
+> **Already set this up before training existed?** Re-run the whole file.
+> It is idempotent, it does not touch existing rows, and it adds the
+> `workouts` table. Without it, training logs stay on the device they were
+> entered on and never reach your other devices.
 
 **If any table does not say RLS enabled, stop and re-run the script.** Row
 Level Security is the only thing standing between your data and anyone who
@@ -124,6 +130,27 @@ var CONFIG = {
 Both are safe to commit — that is the entire point of Row Level Security. A
 filled-in `config.js` overrides anything typed on a device, so there is one
 source of truth.
+
+---
+
+## 5b. Food search (optional, 60 seconds)
+
+Barcode scanning needs nothing — it uses Open Food Facts, which has no key
+and no account. Searching foods by *name* uses the USDA database, which
+wants a free key.
+
+[fdc.nal.usda.gov/api-key-signup.html](https://fdc.nal.usda.gov/api-key-signup.html)
+— email address, no card, key arrives instantly. Paste it into
+**Setup → Food lookup** and press **Test it**.
+
+You can also put it in `config.js` as `USDA_API_KEY` so every device picks
+it up. Weigh that against the repo being public: unlike the Supabase anon
+key, which is protected by Row Level Security, a USDA key in a public repo
+is a rate limit strangers can spend. On a private repo, commit it. On a
+public one, the per-device field is the safer place.
+
+Skip this entirely and everything else still works — you just type macros
+by hand for foods without a barcode, which is what the app did before.
 
 ---
 

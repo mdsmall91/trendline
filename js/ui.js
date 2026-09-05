@@ -73,6 +73,17 @@
       targetKcal: target.target, weightLb: basisLb,
       proteinPerLb: st.proteinPerLb, fatPerLb: st.fatPerLb
     });
+    /* Training credit is computed here but deliberately NOT fed into
+       estimateTDEE. That estimate measures what the body actually did
+       with the food it got, training included; adding an allowance into
+       the measurement would make the measurement chase itself. The
+       credit belongs to the day's budget, not to the metabolism.
+
+       It self-corrects over weeks anyway: eat the credit, and if it was
+       too generous the trend slows, the measured burn falls, and the
+       target comes down on its own. */
+    var training = WL.dayTraining(Store.workoutsFor(day), profile);
+
     var rate = WL.trendRate(series, 21);
     var projection = (hasWeight && typeof st.goalWeight === 'number' && rate !== null)
       ? WL.projectGoal(currentTrend, st.goalWeight, rate, series[series.length - 1].date)
@@ -82,7 +93,7 @@
       st: st, pts: pts, series: series, hasWeight: hasWeight,
       currentTrend: currentTrend, lastRaw: lastRaw, basisLb: basisLb,
       intake: intake, tdee: tdee, target: target, macros: macros,
-      rate: rate, projection: projection,
+      rate: rate, projection: projection, training: training, profile: profile,
       engine: Store.engineEntries()
     };
   }
@@ -98,11 +109,18 @@
     var d = Store.peekDay(day);
     var lines = Store.entriesFor(day);
     var eaten = WL.entryTotals({ food: lines });
-    var tgt = D.hasWeight ? D.target.target : null;
+    /* Training is spent, so it raises the day's allowance. Half of what
+       was burned, by design — see WL.EXERCISE_CREDIT. */
+    var credit = D.hasWeight ? D.training.credit : 0;
+    var tgt = D.hasWeight ? D.target.target + credit : null;
     var left = tgt === null ? null : tgt - eaten.kcal;
 
     $('eaten').textContent = fmt(eaten.kcal);
-    $('target').textContent = tgt === null ? '—' : fmt(tgt);
+    /* The target is shown as base + credit rather than as one number,
+       because a target that moves for no visible reason is a target
+       nobody believes. */
+    $('target').textContent = tgt === null ? '—'
+      : (credit ? fmt(D.target.target) + ' + ' + fmt(credit) : fmt(tgt));
     $('remaining').textContent = left === null ? '—' : fmt(Math.abs(left));
     $('remainingLabel').textContent = left === null ? 'log a weight to set a target'
       : (left < 0 ? 'calories over' : 'calories left');
@@ -181,6 +199,10 @@
     if (D.target.clamped) {
       s += ' Target held at the ' + D.target.floor + ' floor — that is ' +
         fmt(D.target.actualRate, 2) + ' lb/wk, not ' + fmt(D.target.requestedRate, 2) + '.';
+    }
+    if (D.training.credit) {
+      s += ' Training added ' + fmt(D.training.credit) + ' — half of the ' +
+        fmt(D.training.gross) + ' you worked off.';
     }
     return s;
   }
@@ -311,6 +333,93 @@
         '<button class="btn ghost" data-habit-rm="' + esc(h.id) + '" aria-label="Delete">&times;</button>' +
         '</div><div class="grid30">' + cells + '</div></div>';
     }).join('') : '<p class="empty">No habits yet.</p>';
+  }
+
+  /* ---------------------------------------------------------------
+     TRAIN
+     --------------------------------------------------------------- */
+
+  var ACTIVITY_LABEL = {
+    walk_easy: 'Walk — easy', walk_brisk: 'Walk — brisk', hike: 'Hike',
+    jog: 'Jog', run: 'Run', cycle_easy: 'Bike — easy', cycle_hard: 'Bike — hard',
+    swim: 'Swim', row: 'Row', elliptical: 'Elliptical', stairs: 'Stairs',
+    lift_moderate: 'Lifting — moderate', lift_hard: 'Lifting — hard', other: 'Other'
+  };
+
+  function workoutLabel(w) {
+    if (w.kind === 'steps') return 'Steps';
+    if (w.name) return w.name;
+    return ACTIVITY_LABEL[w.activity] || 'Session';
+  }
+
+  function renderTrain(D) {
+    var list = Store.workoutsFor(day);
+    var stepRec = Store.stepsOn(day);
+
+    if (document.activeElement !== $('stepsInput')) {
+      $('stepsInput').value = (stepRec && stepRec.steps) ? stepRec.steps : '';
+    }
+    if (!D.hasWeight) {
+      $('stepsHint').textContent = 'Log a weight first — step calories depend on what you are carrying.';
+    } else if (stepRec && stepRec.steps) {
+      $('stepsHint').textContent = fmt(stepRec.steps) + ' steps ≈ ' +
+        fmt(WL.stepsKcal(stepRec.steps, D.profile)) + ' cal, worked out from your weight and height.';
+    } else {
+      $('stepsHint').textContent = 'One number for the whole day. Saving again replaces it rather than adding to it.';
+    }
+
+    var sessions = list.filter(function (w) { return w.kind !== 'steps'; });
+    var rows = list.map(function (w) {
+      var kc = WL.workoutKcal(w, D.profile);
+      var sub = [];
+      if (w.kind === 'steps') sub.push(fmt(w.steps) + ' steps');
+      else {
+        if (w.activity && ACTIVITY_LABEL[w.activity] && w.name) sub.push(ACTIVITY_LABEL[w.activity]);
+        if (w.minutes) sub.push(fmt(w.minutes) + ' min');
+        var vol = WL.setsVolume(w.sets);
+        if (vol) sub.push(fmt(vol) + ' lb moved');
+      }
+      if (typeof w.kcal === 'number' && w.kcal > 0) sub.push('entered by hand');
+      return '<li><span class="name"><b>' + esc(workoutLabel(w)) + '</b>' +
+        (sub.length ? '<small>' + esc(sub.join('  ·  ')) + '</small>' : '') + '</span>' +
+        '<span class="kcal">' + fmt(kc) + '</span>' +
+        '<button class="btn ghost" data-wo-rm="' + esc(w.id) + '" aria-label="Remove">&times;</button></li>';
+    }).join('');
+    $('workoutLog').innerHTML = rows ||
+      '<li><span class="empty" style="flex:1">Nothing logged for this day.</span></li>';
+
+    var t = D.training;
+    $('trainStats').innerHTML = [
+      { k: 'Worked off', v: D.hasWeight ? fmt(t.gross) : '—', n: 'net calories' },
+      { k: 'Added to today', v: D.hasWeight ? '+' + fmt(t.credit) : '—', n: 'half of it' },
+      { k: 'Sessions', v: String(sessions.length), n: stepRec ? 'plus steps' : '' },
+      { k: 'Eat up to', v: D.hasWeight ? fmt(D.target.target + t.credit) : '—', n: 'cal today' }
+    ].map(function (s) {
+      return '<div class="stat"><div class="k">' + esc(s.k) + '</div><div class="v">' + esc(s.v) +
+        '</div><div class="n">' + esc(s.n || '') + '</div></div>';
+    }).join('');
+
+    $('trainNote').textContent = 'Every number here is net — what the activity cost above sitting ' +
+      'still for the same minutes, because your measured burn already counts the sitting. ' +
+      'Half of it comes back as food. The other half is the margin against MET tables and step ' +
+      'counters both running generous.';
+
+    /* 30-day burn. Uses the intake bar chart: same shape of question,
+       and one chart renderer is easier to keep honest than two. */
+    var end = WL.todayKey(), days = [], total = 0, active = 0;
+    for (var i = 29; i >= 0; i--) {
+      var k = WL.addDays(end, -i);
+      var d = WL.dayTraining(Store.workoutsFor(k), D.profile);
+      days.push({ date: k, kcal: d.gross });
+      if (d.gross > 0) { total += d.gross; active++; }
+    }
+    $('trainChart').innerHTML = Chart.intake(days, {
+      target: 0, empty: 'Log a session and the days appear here.'
+    });
+    $('trainSummary').textContent = active
+      ? active + ' of 30 days trained · ' + fmt(total) + ' net calories worked off · ' +
+        fmt(Math.round(total * WL.EXERCISE_CREDIT)) + ' given back as food'
+      : 'Nothing logged in the last 30 days.';
   }
 
   /* ---------------------------------------------------------------
@@ -572,6 +681,7 @@
     var D = derive();
     renderToday(D);
     renderTrend(D);
+    renderTrain(D);
     renderFoods();
     renderHabits(D);
     renderLookup();
@@ -718,6 +828,62 @@
     var b = ev.target.closest('[data-rm]');
     if (!b) return;
     Store.removeEntry(b.dataset.rm);
+    render();
+  });
+
+  /* train */
+  var workoutKind = 'cardio';
+
+  function saveSteps() {
+    Store.setSteps(day, num($('stepsInput')));
+    render();
+  }
+  $('saveSteps').addEventListener('click', saveSteps);
+  $('stepsInput').addEventListener('change', saveSteps);
+  $('stepsInput').addEventListener('keydown', function (ev) {
+    if (ev.key === 'Enter') { ev.preventDefault(); $('stepsInput').blur(); saveSteps(); }
+  });
+
+  $('kindSeg').addEventListener('click', function (ev) {
+    var b = ev.target.closest('[data-kind]');
+    if (!b) return;
+    workoutKind = b.dataset.kind;
+    Array.prototype.forEach.call($('kindSeg').children, function (x) {
+      x.setAttribute('aria-pressed', String(x === b));
+    });
+    $('cardioFields').hidden = workoutKind !== 'cardio';
+    $('liftingFields').hidden = workoutKind !== 'lifting';
+  });
+
+  $('addWorkout').addEventListener('click', function () {
+    var minutes = num($('woMinutes'));
+    var kcal = num($('woKcal'));
+    /* Without minutes there is nothing to estimate from, so a session
+       with neither minutes nor a hand-entered figure would be worth
+       zero and quietly look like it counted. */
+    if (minutes === null && kcal === null) {
+      $('woMinutes').focus();
+      return;
+    }
+    var w = { kind: workoutKind, minutes: minutes, kcal: kcal };
+    if (workoutKind === 'lifting') {
+      w.activity = $('woIntensity').value;
+      w.name = $('woName').value.trim() || 'Lifting';
+      var sets = WL.parseSets($('woSets').value);
+      if (sets.length) w.sets = sets;
+    } else {
+      w.activity = $('woActivity').value;
+      w.name = '';
+    }
+    Store.addWorkout(day, w);
+    ['woMinutes', 'woKcal', 'woName', 'woSets'].forEach(function (id) { $(id).value = ''; });
+    render();
+  });
+
+  $('workoutLog').addEventListener('click', function (ev) {
+    var b = ev.target.closest('[data-wo-rm]');
+    if (!b) return;
+    Store.removeWorkout(b.dataset.woRm);
     render();
   });
 
