@@ -90,6 +90,21 @@ the account that created it. Never put the **service role** key in
 Supabase's free tier pauses a project after a week of no activity. An app
 you open daily never goes quiet, so in practice this won't bite you.
 
+### When it syncs
+
+On launch, on every edit (debounced 2.5s, so logging a meal is one upload),
+every time the app comes back to the foreground, when the network returns,
+on a tap of the header pill, and on a ten-minute heartbeat while the app is
+visible.
+
+The heartbeat exists because everything else is an event, and none of those
+events fire for a phone sitting on the counter with the app open. Without
+it, a weigh-in logged on the laptop could sit unseen on the phone for hours
+with both online. It only runs while visible: a background tab syncing
+achieves nothing and spends battery, and on iOS a suspended app does not run
+timers at all — which is fine, because the foreground trigger covers exactly
+that case the moment it wakes.
+
 ### How sync works
 
 Local-first, last-write-wins per record. Your device never waits on the

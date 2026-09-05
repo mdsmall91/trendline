@@ -14,7 +14,7 @@
   /* Bumped by hand on each deploy, and shown under Setup → Version.
      Its only job is to let "it still looks old" be answered with a
      number instead of a guess. Keep it in step with CACHE in sw.js. */
-  var BUILD = '2026-09-05.5';
+  var BUILD = '2026-09-05.6';
   var day = WL.todayKey();
   var range = 30;
   var foodFilterText = '';
@@ -745,6 +745,26 @@
     syncTimer = setTimeout(function () { doSync('edit'); }, 2500);
   }
   window.__tlChanged = scheduleSync;
+
+  /* A heartbeat, for the app left open rather than opened.
+
+     Everything else that triggers a sync is an event: an edit, coming
+     back to the foreground, the network returning. None of those fire
+     for a phone sitting on the counter with the app up, or a laptop
+     tab open all afternoon — so a weigh-in logged on one device could
+     sit unseen on the other for hours despite both being online.
+
+     Only when visible. A background tab syncing achieves nothing and
+     spends battery, and on iOS a suspended app does not run timers at
+     all — which is fine, because the foreground handler covers exactly
+     that case the moment it wakes. The two together mean the data is
+     never more than ten minutes stale on any device that is awake. */
+  var SYNC_EVERY_MS = 10 * 60 * 1000;
+
+  setInterval(function () {
+    if (document.visibilityState !== 'visible') return;
+    doSync('periodic');
+  }, SYNC_EVERY_MS);
 
   /* ---------------------------------------------------------------
      EVENTS
