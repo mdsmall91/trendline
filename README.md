@@ -178,6 +178,16 @@ the library. Quick-add covers restaurant meals. Within two weeks logging is
 mostly autocomplete, and every row is right — which no general database can
 promise.
 
+**3b. Macros over time.** The Trend page charts protein, carbs and fat by
+day against their targets, with the average of the logged days drawn across
+them — because one day of macros mostly reflects what was in the fridge.
+
+Only protein is scored. Protein is a floor: hitting it is the win, and on a
+deficit it is what decides whether the weight you lose is fat. Carbs and fat
+are the remainder after protein and calories are settled — they land where
+they land, and colouring a day red for exceeding a number the app itself
+derived would be inventing a failure.
+
 **4. Habits.** Daily checkboxes with streaks and a 30-day grid. Streaks
 tolerate an unlogged today, because a streak that breaks at 00:01 every
 morning trains you to stop looking at it.

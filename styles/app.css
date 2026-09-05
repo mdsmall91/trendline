@@ -262,6 +262,13 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-
 .chart .barfill { fill: var(--accent); opacity: 0.45; }
 .chart .barfill.over { fill: var(--over); opacity: 0.6; }
 .chart .targetline { stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 4 3; }
+/* A protein day that fell short. Faded rather than reddened: missing
+   protein is worth seeing, but it is not the same kind of event as
+   eating past your calorie target. */
+.chart .barfill.short { fill: var(--text-faint); opacity: 0.4; }
+/* The average of the logged days — the number that actually means
+   something, since one day of macros is mostly what was in the fridge. */
+.chart .meanline { stroke: var(--text-muted); stroke-width: 1.5; }
 
 .legend { display: flex; gap: var(--s-4); font-size: 0.75rem; color: var(--text-muted);
   margin-top: var(--s-2); flex-wrap: wrap; }

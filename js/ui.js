@@ -14,7 +14,7 @@
   /* Bumped by hand on each deploy, and shown under Setup → Version.
      Its only job is to let "it still looks old" be answered with a
      number instead of a guess. Keep it in step with CACHE in sw.js. */
-  var BUILD = '2026-09-05.7';
+  var BUILD = '2026-09-05.8';
   var day = WL.todayKey();
   var range = 30;
   var foodFilterText = '';
@@ -23,6 +23,7 @@
   var authMessage = '';
   var syncing = false;
   var lookup = { results: [], status: '', open: false };
+  var macroKey = 'protein';     /* which macro the Trend chart is showing */
 
   function fmt(n, dp) {
     if (n === null || n === undefined || !isFinite(n)) return '—';
@@ -292,6 +293,60 @@
       $('intakeSummary').textContent = logged.length + ' of 21 days logged · average ' +
         fmt(mean) + ' cal' + (D.hasWeight ? ' · ' + over + ' over target' : '');
     }
+
+    renderMacroChart(D, end);
+  }
+
+  /* ---------------------------------------------------------------
+     MACROS OVER TIME
+
+     Same 21-day window as the intake chart above it, so the two read
+     as one picture rather than two arguments.
+
+     Only protein is scored against its target. Protein is a floor —
+     hitting it is the win, and on a deficit it is the macro worth
+     protecting. Carbs and fat are the remainder after protein and
+     calories are settled; they land where they land, and colouring a
+     day red for exceeding a number the app itself derived would be
+     inventing a failure that does not exist.
+     --------------------------------------------------------------- */
+
+  var MACRO_LABEL = { protein: 'Protein', carbs: 'Carbs', fat: 'Fat' };
+
+  function renderMacroChart(D, end) {
+    var macros = Store.macroMap();
+    var days = [];
+    for (var i = 20; i >= 0; i--) {
+      var k = WL.addDays(end, -i);
+      var m = macros[k];
+      days.push({ date: k, value: m ? m[macroKey] : 0 });
+    }
+
+    var target = D.hasWeight ? D.macros[macroKey] : 0;
+    $('macroChart').innerHTML = Chart.macro(days, {
+      target: target,
+      scored: macroKey === 'protein',
+      empty: 'Log some food and the days appear here.'
+    });
+
+    var logged = days.filter(function (x) { return x.value > 0; });
+    var name = MACRO_LABEL[macroKey];
+    if (!logged.length) {
+      $('macroSummary').textContent = 'No food logged in the last three weeks.';
+      return;
+    }
+    var mean = logged.reduce(function (a, x) { return a + x.value; }, 0) / logged.length;
+    var parts = [logged.length + ' of 21 days logged', 'average ' + fmt(mean) + ' g'];
+    if (target > 0) parts.push('target ' + fmt(target) + ' g');
+
+    if (macroKey === 'protein' && target > 0) {
+      var hit = logged.filter(function (x) { return x.value >= target * 0.9; }).length;
+      parts.push('within reach of target on ' + hit + ' of ' + logged.length);
+    }
+    $('macroSummary').textContent = parts.join(' · ') +
+      (macroKey === 'protein'
+        ? '. Protein is the one to defend on a deficit — it is what decides whether the weight you lose is fat.'
+        : '. ' + name + ' is the remainder after protein and calories, so there is no such thing as being over on it.');
   }
 
   /* ---------------------------------------------------------------
@@ -1067,6 +1122,16 @@
   });
 
   $('dayNote').addEventListener('input', function () { Store.setNote(day, $('dayNote').value); });
+
+  $('macroSeg').addEventListener('click', function (ev) {
+    var b = ev.target.closest('[data-macro]');
+    if (!b) return;
+    macroKey = b.dataset.macro;
+    Array.prototype.forEach.call($('macroSeg').children, function (x) {
+      x.setAttribute('aria-pressed', String(x === b));
+    });
+    render();
+  });
 
   $('rangeSeg').addEventListener('click', function (ev) {
     var b = ev.target.closest('[data-range]');

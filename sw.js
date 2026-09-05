@@ -24,7 +24,7 @@
    no reason to re-fetch them on every launch.
    ============================================================= */
 
-var CACHE = 'trendline-v5';
+var CACHE = 'trendline-v6';
 
 var SHELL = [
   './', './index.html', './manifest.webmanifest', './icon.svg',
@@ -93,9 +93,20 @@ self.addEventListener('fetch', function (e) {
   if (url.origin !== self.location.origin) return;
 
   if (isAppCode(url) && !isBigStatic(url)) {
-    /* Network first. The cache is the fallback, not the answer. */
+    /* Network first, and past the HTTP cache.
+
+       Going to the network is not enough on its own: a plain fetch()
+       is still served by the browser's own cache, and GitHub Pages
+       sends max-age=600 on everything. So "network-first" quietly
+       meant "up to ten minutes late" — better than the launch-late
+       behaviour it replaced, but not what the app claims.
+
+       cache:'no-cache' forces a conditional request instead. The
+       server answers 304 with no body whenever nothing changed, so
+       this costs a round trip of headers, not a re-download, and the
+       app is genuinely current on every launch. */
     e.respondWith(
-      fetch(req).then(function (res) {
+      fetch(req, { cache: 'no-cache' }).then(function (res) {
         if (res && res.ok) putInCache(req, res);
         return res;
       }).catch(function () {

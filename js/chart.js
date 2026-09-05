@@ -167,7 +167,81 @@ var Chart = (function () {
     return s + '</svg>';
   }
 
-  return { weight: weight, intake: intake, niceScale: niceScale, esc: esc };
+  /* ---------------------------------------------------------------
+     MACRO — grams a day against the target, with the 7-day mean.
+
+     Deliberately NOT the intake chart with different numbers, because
+     "over" does not mean the same thing for every macro. Protein is a
+     floor: hitting it is the win, and a day above target is a good
+     day. Carbs and fat are the remainder after protein — they land
+     where they land, and painting a day red for going over a number
+     the app itself derived would be inventing a failure.
+
+     So only protein is scored, and the mean line carries the actual
+     signal: one day of protein tells you nothing, a fortnight of it
+     tells you whether you are eating the way you think you are.
+     --------------------------------------------------------------- */
+  function macro(days, opts) {
+    opts = opts || {};
+    if (!days || !days.length) {
+      return '<p class="empty">' + esc(opts.empty || 'Log some food and the days appear here.') + '</p>';
+    }
+    var target = opts.target || 0;
+    var scored = !!opts.scored;      /* protein only */
+
+    var maxV = Math.max(target * 1.3, 1);
+    days.forEach(function (d) { if (d.value > maxV) maxV = d.value; });
+    var sc = niceScale(0, maxV, 3);
+
+    var iw = W - PAD.l - PAD.r, ih = H - PAD.t - PAD.b;
+    var slot = iw / days.length, bw = Math.max(2, slot * 0.62);
+    function py(v) { return PAD.t + ih - (v / sc.max) * ih; }
+
+    var s = open(W, H);
+
+    for (var v = sc.min; v <= sc.max + 1e-9; v += sc.step) {
+      var y = n(py(v));
+      s += '<line class="gridline" x1="' + PAD.l + '" y1="' + y + '" x2="' + (W - PAD.r) + '" y2="' + y + '"/>';
+      s += '<text class="tick" x="' + (PAD.l - 5) + '" y="' + (y + 3) + '" text-anchor="end">' + Math.round(v) + '</text>';
+    }
+
+    for (var i = 0; i < days.length; i++) {
+      var d = days[i];
+      if (!d.value) continue;
+      var x = PAD.l + slot * i + (slot - bw) / 2;
+      var top = n(py(d.value));
+      /* A short day is the one worth seeing on protein, so the miss is
+         what gets faded rather than the hit being highlighted. */
+      var missed = scored && target > 0 && d.value < target * 0.9;
+      s += '<rect class="barfill' + (missed ? ' short' : '') + '" x="' + n(x) + '" y="' + top +
+        '" width="' + n(bw) + '" height="' + n(H - PAD.b - top) + '" rx="1"/>';
+    }
+
+    /* Mean of the days that were actually logged. An unlogged day is
+       absent, not zero — the same rule the TDEE estimator lives by. */
+    var logged = days.filter(function (d) { return d.value > 0; });
+    if (logged.length >= 3) {
+      var mean = logged.reduce(function (a, d) { return a + d.value; }, 0) / logged.length;
+      if (mean <= sc.max) {
+        var my = n(py(mean));
+        s += '<line class="meanline" x1="' + PAD.l + '" y1="' + my + '" x2="' + (W - PAD.r) + '" y2="' + my + '"/>';
+      }
+    }
+
+    if (target > 0 && target <= sc.max) {
+      var ty = n(py(target));
+      s += '<line class="targetline" x1="' + PAD.l + '" y1="' + ty + '" x2="' + (W - PAD.r) + '" y2="' + ty + '"/>';
+    }
+
+    s += '<line class="axis" x1="' + PAD.l + '" y1="' + (H - PAD.b) + '" x2="' + (W - PAD.r) + '" y2="' + (H - PAD.b) + '"/>';
+    s += '<text class="tick" x="' + PAD.l + '" y="' + (H - PAD.b + 13) + '">' + esc(shortDate(days[0].date)) + '</text>';
+    s += '<text class="tick" x="' + (W - PAD.r) + '" y="' + (H - PAD.b + 13) + '" text-anchor="end">' +
+      esc(shortDate(days[days.length - 1].date)) + '</text>';
+
+    return s + '</svg>';
+  }
+
+  return { weight: weight, intake: intake, macro: macro, niceScale: niceScale, esc: esc };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = Chart;

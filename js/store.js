@@ -310,6 +310,22 @@ var Store = (function () {
     return out;
   }
 
+  /* Day -> { kcal, protein, carbs, fat }, for days with food logged.
+
+     Same rule as intakeMap: a day with an empty log is absent rather
+     than zero, so "ate no carbs" and "logged nothing" stay different
+     things. An average that quietly counts unlogged days as zeroes is
+     an average that always says you are doing better than you are. */
+  function macroMap() {
+    var out = {};
+    alive(load().entries).forEach(function (e) {
+      var t = WL.lineTotals(e);
+      var d = out[e.date] || (out[e.date] = { kcal: 0, protein: 0, carbs: 0, fat: 0 });
+      d.kcal += t.kcal; d.protein += t.protein; d.carbs += t.carbs; d.fat += t.fat;
+    });
+    return out;
+  }
+
   function loggedDates() {
     var s = load(), set = {};
     Object.keys(s.days).forEach(function (k) {
@@ -548,7 +564,7 @@ var Store = (function () {
     entriesFor: entriesFor, engineEntries: engineEntries,
     workoutsFor: workoutsFor, addWorkout: addWorkout, removeWorkout: removeWorkout,
     setSteps: setSteps, stepsOn: stepsOn,
-    weightPoints: weightPoints, intakeMap: intakeMap, loggedDates: loggedDates,
+    weightPoints: weightPoints, intakeMap: intakeMap, macroMap: macroMap, loggedDates: loggedDates,
     setWeight: setWeight, setNote: setNote, setHabit: setHabit,
     addEntry: addEntry, removeEntry: removeEntry,
     addFood: addFood, removeFood: removeFood, findFoodByName: findFoodByName,
