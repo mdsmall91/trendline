@@ -81,6 +81,14 @@
         <button class="btn primary grow-0" id="addFoodLine">Add</button>
       </div>
       <div class="row" style="margin-top:var(--s-2)">
+        <button class="btn grow-0" id="scanBarcode">Scan barcode</button>
+        <button class="btn" id="searchOnline">Look it up</button>
+      </div>
+      <div id="lookupPanel" hidden>
+        <div class="hint" id="lookupStatus"></div>
+        <ul class="list" id="lookupResults"></ul>
+      </div>
+      <div class="row" style="margin-top:var(--s-2)">
         <label class="field" style="margin:0">
           <span class="sr">Quick calories</span>
           <input type="number" id="quickKcal" inputmode="numeric" placeholder="Quick add — calories only">
@@ -100,7 +108,7 @@
           <button class="btn grow-0" id="inCancel">Cancel</button>
         </div>
       </div>
-      <div class="hint" id="foodHint">Type a name you've logged before and it fills itself in. A new name asks for its macros once, then joins your library.</div>
+      <div class="hint" id="foodHint">Type a name you've logged before and it fills itself in. A new name asks for its macros once, then joins your library. Scan a package or look it up and the macros arrive filled in.</div>
     </div>
   </div>
 
@@ -249,6 +257,21 @@
   </div>
 
   <div class="card">
+    <h2>Food lookup</h2>
+    <p class="hint" style="margin:0 0 var(--s-3)">Barcode scanning uses Open Food Facts and needs nothing at all.
+      Searching by name uses the USDA database, which wants a free key — no card, issued instantly at
+      <b>fdc.nal.usda.gov/api-key-signup.html</b>.</p>
+    <label class="field"><span>USDA API key</span>
+      <input type="text" id="usdaKey" autocapitalize="off" autocorrect="off" spellcheck="false"
+             placeholder="paste the key here"></label>
+    <div class="row">
+      <button class="btn primary grow-0" id="usdaSave">Save key</button>
+      <button class="btn ghost grow-0" id="usdaTest">Test it</button>
+    </div>
+    <div class="hint" id="usdaStatus"></div>
+  </div>
+
+  <div class="card">
     <h2>Your data</h2>
     <div class="row" style="flex-wrap:wrap">
       <button class="btn" id="exportBtn">Export JSON</button>
@@ -274,10 +297,30 @@
   <button id="tab-settings" role="tab" data-tab="settings" aria-selected="false" aria-controls="panel-settings">Setup</button>
 </nav>
 
+<!-- ============================ SCANNER ============================ -->
+<div class="scanner" id="scannerOverlay" hidden>
+  <div class="scanner-in">
+    <div class="scanner-head">
+      <b>Scan a barcode</b>
+      <button class="btn ghost grow-0" id="scanClose" aria-label="Close scanner">Close</button>
+    </div>
+    <div class="scanner-view" id="scanView"></div>
+    <div class="hint" id="scanStatus">Starting the camera…</div>
+    <div class="row">
+      <label class="field" style="margin:0"><span class="sr">Barcode digits</span>
+        <input type="text" id="manualBarcode" inputmode="numeric" autocomplete="off"
+               placeholder="…or type the digits under the bars"></label>
+      <button class="btn primary grow-0" id="manualBarcodeGo">Look up</button>
+    </div>
+  </div>
+</div>
+
 <script src="config.js"></script>
 <script src="js/core.js"></script>
 <script src="js/store.js"></script>
 <script src="js/sync.js"></script>
+<script src="js/foodapi.js"></script>
+<script src="js/scanner.js"></script>
 <script src="js/chart.js"></script>
 <script src="js/ui.js"></script>
 </body>

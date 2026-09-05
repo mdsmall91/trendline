@@ -17,6 +17,7 @@
   var authEmail = '';
   var authMessage = '';
   var syncing = false;
+  var lookup = { results: [], status: '', open: false };
 
   function fmt(n, dp) {
     if (n === null || n === undefined || !isFinite(n)) return '—';
@@ -313,6 +314,70 @@
   }
 
   /* ---------------------------------------------------------------
+     FOOD LOOKUP
+
+     Results are held in module state rather than read back out of the
+     DOM, so logging one does not depend on the markup surviving a
+     re-render. Each row carries its index and nothing else.
+     --------------------------------------------------------------- */
+
+  function renderLookup() {
+    var panel = $('lookupPanel');
+    panel.hidden = !lookup.open;
+    if (!lookup.open) return;
+
+    $('lookupStatus').textContent = lookup.status || '';
+    $('lookupResults').innerHTML = lookup.results.map(function (r, i) {
+      var sub = [];
+      if (r.serving) sub.push(r.serving);
+      sub.push(fmt(r.protein) + 'p ' + fmt(r.carbs) + 'c ' + fmt(r.fat) + 'f');
+      sub.push(r.source === 'usda' ? 'USDA' : 'Open Food Facts');
+      /* USDA lab foods publish macros and no calorie figure. Saying so
+         is the difference between a number you trust and one you don't. */
+      if (r.kcalDerived) sub.push('cal from macros');
+      return '<li style="padding:0"><button class="result" data-pick="' + i + '">' +
+        '<span class="name"><b>' + esc(r.name) + '</b><small>' + esc(sub.join('  ·  ')) +
+        '</small></span><span class="kcal">' + fmt(r.kcal) + '</span></button></li>';
+    }).join('');
+  }
+
+  function setLookup(status, results) {
+    lookup.open = true;
+    lookup.status = status || '';
+    lookup.results = results || [];
+    renderLookup();
+  }
+
+  function closeLookup() {
+    lookup.open = false; lookup.results = []; lookup.status = '';
+    renderLookup();
+  }
+
+  /* Log a looked-up food, and keep it.
+
+     The library is the cache: the same barcode scanned next week is a
+     local hit with no network at all. A name that already exists is
+     reused rather than duplicated, so scanning something you had typed
+     in by hand does not leave two of it. */
+  function logLookupResult(rec) {
+    var existing = Store.findFoodByName(rec.name);
+    var f = existing || Store.addFood({
+      name: rec.name, serving: rec.serving,
+      kcal: rec.kcal, protein: rec.protein, carbs: rec.carbs, fat: rec.fat
+    });
+    var qty = num($('foodQty'));
+    if (qty === null || qty <= 0) qty = 1;
+    Store.addEntry(day, {
+      foodId: f.id, name: f.name, qty: qty,
+      kcal: f.kcal, protein: f.protein, carbs: f.carbs, fat: f.fat
+    });
+    $('foodPick').value = '';
+    $('foodQty').value = 1;
+    closeLookup();
+    render();
+  }
+
+  /* ---------------------------------------------------------------
      ACCOUNT / SYNC
      --------------------------------------------------------------- */
 
@@ -471,6 +536,20 @@
     $('stAlpha').value = s.alpha;
     $('alphaVal').textContent = Number(s.alpha).toFixed(2);
 
+    /* A key committed in config.js applies to every device, so the field
+       shows it as already handled rather than inviting a second copy. */
+    var cfgKey = (typeof CONFIG !== 'undefined' && CONFIG && CONFIG.USDA_API_KEY) || '';
+    if (document.activeElement !== $('usdaKey')) {
+      $('usdaKey').value = cfgKey ? '' : FoodAPI.usdaKey();
+    }
+    $('usdaKey').placeholder = cfgKey ? 'set in config.js — nothing to do here' : 'paste the key here';
+    $('usdaKey').disabled = !!cfgKey;
+    if (!$('usdaStatus').dataset.sticky) {
+      $('usdaStatus').textContent = FoodAPI.hasUsdaKey()
+        ? 'Key is set. Name search is on.'
+        : 'No key yet. Barcode scanning still works without one.';
+    }
+
     var bytes = 0;
     try { bytes = (localStorage.getItem(Store.KEY) || '').length; } catch (e) {}
     var dates = Store.loggedDates();
@@ -495,6 +574,7 @@
     renderTrend(D);
     renderFoods();
     renderHabits(D);
+    renderLookup();
     renderAccount();
     renderSettings();
     renderSyncPill();
@@ -639,6 +719,104 @@
     if (!b) return;
     Store.removeEntry(b.dataset.rm);
     render();
+  });
+
+  /* food lookup — search by name */
+  $('searchOnline').addEventListener('click', function () {
+    var q = $('foodPick').value.trim();
+    if (!q) { $('foodPick').focus(); setLookup('Type what you ate first, then look it up.', []); return; }
+    setLookup('Searching for “' + q + '”…', []);
+    FoodAPI.searchFoods(q).then(function (rows) {
+      if (!rows.length) setLookup('Nothing found for “' + q + '”. Add it by hand and it is yours from then on.', []);
+      else setLookup(rows.length + ' found. Tap one to log it — it joins your library too.', rows);
+    }).catch(function (e) {
+      setLookup(String(e.message || e), []);
+    });
+  });
+
+  $('lookupResults').addEventListener('click', function (ev) {
+    var b = ev.target.closest('[data-pick]');
+    if (!b) return;
+    var rec = lookup.results[Number(b.dataset.pick)];
+    if (rec) logLookupResult(rec);
+  });
+
+  /* food lookup — barcode */
+  function openScanner() {
+    $('scannerOverlay').hidden = false;
+    $('manualBarcode').value = '';
+    var why = Scanner.unavailableReason();
+    if (why) {
+      /* No camera is not a dead end — the digits under the bars are
+         right there on the package. */
+      $('scanStatus').textContent = why + ' You can still type the digits below.';
+      $('manualBarcode').focus();
+      return;
+    }
+    $('scanStatus').textContent = 'Starting the camera…';
+    Scanner.start('scanView', function (err, code) {
+      if (err) {
+        $('scanStatus').textContent = String(err.message || err) + ' You can still type the digits below.';
+        return;
+      }
+      $('scanStatus').textContent = 'Read ' + code + ' — looking it up…';
+      resolveBarcode(code);
+    }).then(function () {
+      if (Scanner.running()) $('scanStatus').textContent = 'Point the camera at the barcode.';
+    });
+  }
+
+  function closeScanner() {
+    Scanner.stop();
+    $('scannerOverlay').hidden = true;
+  }
+
+  /* Shared by the camera and the typed-in path, because from here they
+     are the same thing: a number that may or may not be in the database. */
+  function resolveBarcode(code) {
+    closeScanner();
+    setLookup('Looking up ' + code + '…', []);
+    FoodAPI.lookupBarcode(code).then(function (rec) {
+      if (!rec) {
+        setLookup('Barcode ' + code + ' is not in Open Food Facts. It is crowd-sourced, so that ' +
+          'happens — add it by hand and it stays in your library.', []);
+        return;
+      }
+      setLookup('Found it. Tap to log.', [rec]);
+    }).catch(function (e) {
+      setLookup(String(e.message || e), []);
+    });
+  }
+
+  $('scanBarcode').addEventListener('click', openScanner);
+  $('scanClose').addEventListener('click', closeScanner);
+  $('manualBarcodeGo').addEventListener('click', function () {
+    var v = $('manualBarcode').value.trim();
+    if (v) resolveBarcode(v);
+  });
+  $('manualBarcode').addEventListener('keydown', function (ev) {
+    if (ev.key === 'Enter') { ev.preventDefault(); $('manualBarcodeGo').click(); }
+  });
+  document.addEventListener('keydown', function (ev) {
+    if (ev.key === 'Escape' && !$('scannerOverlay').hidden) closeScanner();
+  });
+
+  /* USDA key */
+  function usdaSay(text) {
+    $('usdaStatus').dataset.sticky = '1';
+    $('usdaStatus').textContent = text;
+  }
+  $('usdaSave').addEventListener('click', function () {
+    var k = $('usdaKey').value.trim();
+    FoodAPI.setUsdaKey(k);
+    usdaSay(k ? 'Saved on this device. Put it in config.js to have it on all of them.' : 'Key cleared.');
+  });
+  $('usdaTest').addEventListener('click', function () {
+    if (!FoodAPI.hasUsdaKey()) { usdaSay('Nothing to test — no key set.'); return; }
+    usdaSay('Testing…');
+    FoodAPI.searchFoods('egg', { limit: 1 }).then(function (rows) {
+      usdaSay(rows.length ? 'Working — the key is good.' : 'The key was accepted but returned nothing.');
+    }).catch(function (e) { usdaSay(String(e.message || e)); });
   });
 
   $('habitToday').addEventListener('change', function (ev) {
@@ -855,7 +1033,10 @@
   }, 60000);
 
   document.addEventListener('visibilitychange', function () {
-    if (document.visibilityState === 'visible') doSync('foreground');
+    if (document.visibilityState === 'visible') { doSync('foreground'); return; }
+    /* Leaving the camera running in the background keeps the indicator
+       light on and, on iOS, comes back as a black frame. */
+    if (Scanner.running()) closeScanner();
   });
   window.addEventListener('online', function () { renderSyncPill(); doSync('online'); });
   window.addEventListener('offline', renderSyncPill);

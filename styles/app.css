@@ -298,3 +298,66 @@ code {
 @media (min-width: 600px) {
   .stats { grid-template-columns: repeat(4, 1fr); }
 }
+
+/* =============================================================
+   BARCODE SCANNER
+
+   Full-screen because a viewfinder in a card is a viewfinder nobody
+   can aim. Fixed rather than a dialog element: <dialog> on iOS still
+   fights the on-screen keyboard, and the manual-entry field below the
+   camera has to stay reachable.
+   ============================================================= */
+.scanner {
+  position: fixed; inset: 0; z-index: 50;
+  background: oklch(0.14 0.01 70 / 0.94);
+  display: flex; align-items: center; justify-content: center;
+  padding: var(--s-4);
+  padding-bottom: max(var(--s-4), env(safe-area-inset-bottom));
+}
+.scanner[hidden] { display: none; }
+.scanner-in {
+  width: 100%; max-width: 460px;
+  background: var(--paper); border-radius: var(--radius);
+  border: var(--hairline); padding: var(--s-4);
+}
+.scanner-head {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: var(--s-3);
+}
+.scanner-head b { font-family: var(--font-display); font-size: 1.0625rem; }
+
+/* The library injects a <video> sized to its own idea of the box, so
+   the frame is constrained here and the video told to cover it. */
+.scanner-view {
+  width: 100%; aspect-ratio: 4 / 3;
+  background: oklch(0.10 0 0); border-radius: var(--radius);
+  overflow: hidden; margin-bottom: var(--s-2);
+}
+.scanner-view video, .scanner-view canvas {
+  width: 100% !important; height: 100% !important; object-fit: cover; display: block;
+}
+.scanner-view img { display: none; }   /* the library's placeholder logo */
+
+/* Results of an online lookup. Tapping a row logs it, so the whole row
+   is the target and there is no separate "add" button to miss. */
+.result {
+  display: flex; align-items: center; gap: var(--s-2);
+  width: 100%; text-align: left; cursor: pointer;
+  background: none; border: 0; border-bottom: var(--hairline);
+  padding: var(--s-3) 0; color: inherit; font: inherit;
+}
+.result:last-child { border-bottom: 0; }
+.result:hover { background: var(--surface); }
+.result .name { flex: 1; min-width: 0; }
+.result .name b {
+  display: block; font-weight: 500; font-size: 0.9375rem;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.result .name small {
+  color: var(--text-muted); font-size: 0.75rem;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block;
+}
+.result .kcal {
+  font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+  font-size: 0.875rem; color: var(--text-muted); flex: 0 0 auto;
+}

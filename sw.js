@@ -4,12 +4,19 @@
    keeps working on a plane, but a deploy is picked up on the next load
    instead of needing the cache name bumped by hand. */
 
-var CACHE = 'trendline-v1';
+var CACHE = 'trendline-v2';
 var SHELL = [
   './', './index.html', './manifest.webmanifest', './icon.svg',
   './icons/apple-touch-icon.png', './config.js', './styles/app.css',
-  './js/core.js', './js/store.js', './js/sync.js', './js/chart.js', './js/ui.js'
+  './js/core.js', './js/store.js', './js/sync.js', './js/foodapi.js',
+  './js/scanner.js', './js/chart.js', './js/ui.js'
 ];
+
+/* vendor/html5-qrcode.min.js is deliberately NOT in the shell. It is
+   370KB and only the barcode scanner needs it, so it is fetched the
+   first time that button is pressed and cached by the fetch handler
+   below like any other same-origin file. First install stays small;
+   the second scan works on a plane. */
 
 self.addEventListener('install', function (e) {
   e.waitUntil(caches.open(CACHE).then(function (c) { return c.addAll(SHELL); })

@@ -19,5 +19,14 @@
 
 var CONFIG = {
   SUPABASE_URL: 'https://mmwymuxutgmwfmvkvxzw.supabase.co',
-  SUPABASE_ANON_KEY: 'sb_publishable_tSgaTLZRuwluENMxA2Nlgw_XVwFFrWy'
+  SUPABASE_ANON_KEY: 'sb_publishable_tSgaTLZRuwluENMxA2Nlgw_XVwFFrWy',
+
+  /* Free key for USDA FoodData Central, used to search foods by name.
+     Optional: barcode scanning uses Open Food Facts and needs no key at
+     all. Sign up at fdc.nal.usda.gov/api-key-signup.html — instant, no
+     card. It is a rate-limit identifier, not a credential, but it is
+     yours: a key in a public repo is a key strangers can spend, so
+     leaving this blank and entering it under Setup → Food lookup is the
+     safer choice unless the repo is private. */
+  USDA_API_KEY: ''
 };
