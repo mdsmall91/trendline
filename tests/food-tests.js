@@ -29,6 +29,32 @@
   check('null rejected', FoodAPI.normalizeBarcode(null) === null);
   check('number input accepted', FoodAPI.normalizeBarcode(38000138416) === null);   /* 11 digits */
 
+  /* ---------- barcode spellings ----------
+     The same product is filed under different digit counts by different
+     databases. USDA had one of the test products only under its
+     13-digit form, so a miss has to be retried as the alternatives
+     before it counts as "not in the database". */
+
+  var v13 = FoodAPI.barcodeVariants('0021000658862');
+  check('13-digit variants include the bare 12', v13.indexOf('021000658862') >= 0, v13.join(','));
+  check('13-digit variants include itself first', v13[0] === '0021000658862');
+  check('13-digit variants include the GTIN-14', v13.indexOf('00021000658862') >= 0, v13.join(','));
+
+  var v12 = FoodAPI.barcodeVariants('038000138416');
+  check('12-digit variants include the padded 13', v12.indexOf('0038000138416') >= 0, v12.join(','));
+
+  check('variants never repeat a spelling', (function () {
+    var all = FoodAPI.barcodeVariants('0038000138416');
+    var seen = {};
+    for (var i = 0; i < all.length; i++) {
+      if (seen[all[i]]) return false;
+      seen[all[i]] = 1;
+    }
+    return true;
+  })());
+
+  check('an 8-digit code is left alone', FoodAPI.barcodeVariants('20601901').length === 1);
+
   /* ---------- Open Food Facts ---------- */
 
   /* Real shape: per-serving AND per-100g present, plus a `-total`

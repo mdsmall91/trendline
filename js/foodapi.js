@@ -333,14 +333,73 @@ var FoodAPI = (function () {
   /* Barcode -> one food, or null if the product is not in the database.
      Open Food Facts is crowd-sourced, so a miss is normal and must read
      as "not found", never as an error. */
+  /* The forms of the same number a database might have filed it under.
+
+     A UPC-A off a US package is 12 digits; the same product is the
+     13-digit EAN with a leading zero, and GTIN-14 adds another. Sources
+     are inconsistent about which they store — USDA had one of the test
+     products only under its 13-digit form — so a miss is worth retrying
+     as the other spellings before believing it. */
+  function barcodeVariants(code) {
+    var out = [code];
+    if (code.length === 13 && code.charAt(0) === '0') out.push(code.slice(1));
+    if (code.length === 12) out.push('0' + code);
+    if (code.length === 13) out.push('0' + code);
+    if (code.length === 14 && code.charAt(0) === '0') out.push(code.slice(1));
+    var seen = {}, uniq = [];
+    for (var i = 0; i < out.length; i++) {
+      if (!seen[out[i]]) { seen[out[i]] = 1; uniq.push(out[i]); }
+    }
+    return uniq;
+  }
+
+  /* USDA as a second opinion on barcodes.
+
+     Open Food Facts is crowd-sourced and its US coverage is patchy —
+     which reads to the person holding the phone as "the scanner is
+     broken" rather than "nobody has added this yet". USDA's Branded
+     set is compiled from label submissions and covers a different
+     slice, so trying both roughly doubles the odds of a hit.
+
+     It has to be a fielded query: a bare barcode in the search box
+     matches nothing at all, because the number is not in the text
+     that gets indexed. */
+  function usdaBarcodeLookup(code) {
+    var key = usdaKey();
+    if (!key) return Promise.resolve(null);
+    var variants = barcodeVariants(code);
+
+    function attempt(i) {
+      if (i >= variants.length) return Promise.resolve(null);
+      var url = USDA_BASE + '/foods/search?query=' +
+        encodeURIComponent('gtinUpc:' + variants[i]) +
+        '&dataType=Branded&pageSize=1&api_key=' + encodeURIComponent(key);
+      return getJSON(url).then(function (j) {
+        var f = (j && j.foods && j.foods[0]) || null;
+        if (!f) return attempt(i + 1);
+        return fromUSDA(f);
+      }).catch(function () { return attempt(i + 1); });
+    }
+    return attempt(0);
+  }
+
   function lookupBarcode(raw) {
     var code = normalizeBarcode(raw);
     if (!code) return Promise.reject(new Error('That is not a barcode I recognise.'));
     var fields = 'code,product_name,generic_name,brands,serving_size,serving_quantity,nutriments';
     var url = OFF_BASE + '/api/v2/product/' + encodeURIComponent(code) + '.json?fields=' + fields;
     return getJSON(url, { 'User-Agent': UA }).then(function (j) {
-      if (!j || j.status === 0 || !j.product) return null;
-      return fromOFF(j.product);
+      if (j && j.status !== 0 && j.product) {
+        var rec = fromOFF(j.product);
+        if (rec) return rec;
+      }
+      return null;
+    }).catch(function () {
+      /* Open Food Facts being down must not take the whole scan with
+         it — USDA is still worth asking. */
+      return null;
+    }).then(function (rec) {
+      return rec || usdaBarcodeLookup(code);
     });
   }
 
@@ -403,11 +462,11 @@ var FoodAPI = (function () {
 
   return {
     /* pure — unit tested in tests/food-tests.html */
-    normalizeBarcode: normalizeBarcode,
+    normalizeBarcode: normalizeBarcode, barcodeVariants: barcodeVariants,
     fromOFF: fromOFF, fromUSDA: fromUSDA, atGrams: atGrams,
     offName: offName, usdaName: usdaName,
     /* network */
-    lookupBarcode: lookupBarcode, searchFoods: searchFoods,
+    lookupBarcode: lookupBarcode, usdaBarcodeLookup: usdaBarcodeLookup, searchFoods: searchFoods,
     usdaKey: usdaKey, setUsdaKey: setUsdaKey, hasUsdaKey: hasUsdaKey
   };
 })();

@@ -282,7 +282,7 @@ supabase/steps-ingest.sql  write-only token + function for the
                         iOS Shortcut that posts daily steps
 SETUP.md                Supabase walkthrough
 STEPS-SHORTCUT.md       Garmin steps into the log, automatically
-tests/                  263 assertions
+tests/                  269 assertions
 ```
 
 ## Tests
@@ -290,7 +290,7 @@ tests/                  263 assertions
 ```
 node tests/tests.js         # 106 — the engine, incl. training calories
 node tests/sync-tests.js    # 86  — merge logic, wire format, session safety
-node tests/food-tests.js    # 71  — food lookup normalizers, no network
+node tests/food-tests.js    # 77  — food lookup normalizers, no network
 ```
 
 Or open `tests/tests.html`, `tests/sync-tests.html` and

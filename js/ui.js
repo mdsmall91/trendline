@@ -14,7 +14,7 @@
   /* Bumped by hand on each deploy, and shown under Setup → Version.
      Its only job is to let "it still looks old" be answered with a
      number instead of a guess. Keep it in step with CACHE in sw.js. */
-  var BUILD = '2026-09-05.9';
+  var BUILD = '2026-09-05.10';
   var day = WL.todayKey();
   var range = 30;
   var foodFilterText = '';
@@ -1180,8 +1180,14 @@
     setLookup('Looking up ' + code + '…', []);
     FoodAPI.lookupBarcode(code).then(function (rec) {
       if (!rec) {
-        setLookup('Barcode ' + code + ' is not in Open Food Facts. It is crowd-sourced, so that ' +
-          'happens — add it by hand and it stays in your library.', []);
+        /* Two databases have now been asked. Say which, so this reads as
+           a gap in the world's data rather than a broken scanner — and
+           say what to do about it, since typing it once is the end of
+           the problem for that product forever. */
+        setLookup('Barcode ' + code + ' is in neither Open Food Facts nor USDA. Both are ' +
+          'incomplete on US groceries, so this happens. Type the name and macros off the ' +
+          'label once and it lives in your library from then on.' +
+          (FoodAPI.hasUsdaKey() ? '' : ' (USDA was skipped — no key set under Setup → Food lookup.)'), []);
         return;
       }
       setLookup('Found it. Tap to log.', [rec]);
