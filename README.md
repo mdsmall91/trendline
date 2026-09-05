@@ -278,7 +278,10 @@ sw.js                   offline shell. Only caches same-origin assets —
 vendor/                 html5-qrcode, vendored rather than CDN-loaded so
                         scanning still works with no signal. Lazy-loaded.
 supabase/schema.sql     tables, indexes, RLS policies
+supabase/steps-ingest.sql  write-only token + function for the
+                        iOS Shortcut that posts daily steps
 SETUP.md                Supabase walkthrough
+STEPS-SHORTCUT.md       Garmin steps into the log, automatically
 tests/                  263 assertions
 ```
 
