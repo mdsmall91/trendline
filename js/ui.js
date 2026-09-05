@@ -14,7 +14,7 @@
   /* Bumped by hand on each deploy, and shown under Setup → Version.
      Its only job is to let "it still looks old" be answered with a
      number instead of a guess. Keep it in step with CACHE in sw.js. */
-  var BUILD = '2026-09-05.8';
+  var BUILD = '2026-09-05.9';
   var day = WL.todayKey();
   var range = 30;
   var foodFilterText = '';
@@ -168,9 +168,12 @@
         if (t.protein || t.carbs || t.fat) {
           sub.push(fmt(t.protein) + 'p ' + fmt(t.carbs) + 'c ' + fmt(t.fat) + 'f');
         }
-        return '<li><span class="name"><b>' + esc(line.name || 'Quick add') + '</b>' +
+        /* The row is the edit affordance. A separate pencil per line is
+           a lot of furniture on a phone for something you do often. */
+        return '<li><button class="rowedit" data-edit="' + esc(line.id) + '">' +
+          '<span class="name"><b>' + esc(line.name || 'Quick add') + '</b>' +
           (sub.length ? '<small>' + esc(sub.join('  ·  ')) + '</small>' : '') + '</span>' +
-          '<span class="kcal">' + fmt(t.kcal) + '</span>' +
+          '<span class="kcal">' + fmt(t.kcal) + '</span></button>' +
           '<button class="btn ghost" data-rm="' + esc(line.id) + '" aria-label="Remove">&times;</button></li>';
       }).join('');
     }
@@ -522,26 +525,142 @@
     renderLookup();
   }
 
-  /* Log a looked-up food, and keep it.
+  /* ---------------------------------------------------------------
+     THE AMOUNT EDITOR
 
-     The library is the cache: the same barcode scanned next week is a
-     local hit with no network at all. A name that already exists is
-     reused rather than duplicated, so scanning something you had typed
-     in by hand does not leave two of it. */
-  function logLookupResult(rec) {
-    var existing = Store.findFoodByName(rec.name);
-    var f = existing || Store.addFood({
-      name: rec.name, serving: rec.serving,
-      kcal: rec.kcal, protein: rec.protein, carbs: rec.carbs, fat: rec.fat
-    });
-    var qty = num($('foodQty'));
+     One panel doing two jobs, because they are the same job: deciding
+     what numbers a line in the log should carry.
+
+       'new'    a lookup result on its way in. USDA lab foods are
+                stated per 100g, which is a laboratory convention and
+                not a portion anybody eats, so the grams have to be
+                settable before it lands.
+       'entry'  a line already logged. Previously the only way to fix
+                one was delete and re-add, which loses the food and
+                retypes everything.
+
+     Every number stays editable by hand in both modes. The databases
+     are good, not right, and the person who ate the thing is a better
+     authority than a national average.
+     --------------------------------------------------------------- */
+
+  var editing = null;   /* {mode:'new', rec} | {mode:'entry', id} */
+
+  function feSet(id, v) { $(id).value = (v === null || v === undefined) ? '' : v; }
+
+  function openFoodEditForResult(rec) {
+    editing = { mode: 'new', rec: rec };
+    var perGram = !!(rec.per100g && rec.per100g.kcal !== null);
+    $('feTitle').textContent = rec.name;
+    $('feGramsRow').hidden = !perGram;
+    $('feQtyRow').hidden = perGram;
+
+    if (perGram) {
+      feSet('feGrams', rec.servingGrams || 100);
+      feSet('feQtyG', 1);
+    } else {
+      feSet('feQty', num($('foodQty')) || 1);
+    }
+    feSet('feKcal', rec.kcal); feSet('feP', rec.protein);
+    feSet('feC', rec.carbs); feSet('feF', rec.fat);
+
+    $('feSave').textContent = 'Log it';
+    $('feHint').textContent = perGram
+      ? 'Stated as ' + rec.serving + '. Change the grams and the numbers follow; ' +
+        'or type over any of them.'
+      : 'Serving: ' + rec.serving + '. Change anything that looks wrong before logging it.';
+    $('foodEdit').hidden = false;
+    (perGram ? $('feGrams') : $('feQty')).focus();
+  }
+
+  function openFoodEditForEntry(id) {
+    var e = Store.entry(id);
+    if (!e) return;
+    editing = { mode: 'entry', id: id };
+    $('feTitle').textContent = e.name || 'Logged food';
+    $('feGramsRow').hidden = true;
+    $('feQtyRow').hidden = false;
+    feSet('feQty', typeof e.qty === 'number' ? e.qty : 1);
+    feSet('feKcal', e.kcal); feSet('feP', e.protein);
+    feSet('feC', e.carbs); feSet('feF', e.fat);
+    $('feSave').textContent = 'Save';
+    $('feHint').textContent = 'These are the numbers for ONE serving. The log multiplies them ' +
+      'by the servings above.';
+    $('foodEdit').hidden = false;
+    lookup.open = false; renderLookup();
+    $('feKcal').focus();
+  }
+
+  function closeFoodEdit() {
+    editing = null;
+    $('foodEdit').hidden = true;
+  }
+
+  /* Grams changed: rescale from the per-100g basis the source gave us.
+     Only ever applies in 'new' mode, because a logged entry no longer
+     carries a per-100g basis to rescale from. */
+  function feRescale() {
+    if (!editing || editing.mode !== 'new') return;
+    var g = num($('feGrams'));
+    var scaled = FoodAPI.atGrams(editing.rec, g);
+    if (!scaled) return;
+    feSet('feKcal', scaled.kcal); feSet('feP', scaled.protein);
+    feSet('feC', scaled.carbs); feSet('feF', scaled.fat);
+  }
+
+  function saveFoodEdit() {
+    if (!editing) return;
+
+    var vals = {
+      kcal: num($('feKcal')), protein: num($('feP')),
+      carbs: num($('feC')), fat: num($('feF'))
+    };
+
+    if (editing.mode === 'entry') {
+      var q = num($('feQty'));
+      Store.updateEntry(editing.id, {
+        qty: (q === null || q <= 0) ? 1 : q,
+        kcal: vals.kcal, protein: vals.protein, carbs: vals.carbs, fat: vals.fat
+      });
+      closeFoodEdit();
+      render();
+      return;
+    }
+
+    var rec = editing.rec;
+    var perGram = !$('feGramsRow').hidden;
+    var qty = num(perGram ? $('feQtyG') : $('feQty'));
     if (qty === null || qty <= 0) qty = 1;
+    var grams = perGram ? num($('feGrams')) : null;
+    var serving = grams ? grams + ' g' : rec.serving;
+
+    /* The library entry is keyed by name, so re-scanning the same
+       product finds it again. When the amount has been changed, the
+       name carries it — "Chicken breast (150 g)" and the same food at
+       100g are different servings and must not overwrite each other. */
+    var name = rec.name;
+    if (grams && rec.servingGrams && Math.abs(grams - rec.servingGrams) > 0.5) {
+      name = rec.name + ' (' + grams + ' g)';
+    }
+
+    var existing = Store.findFoodByName(name);
+    var f = existing
+      ? Store.addFood({
+          id: existing.id, name: name, serving: serving,
+          kcal: vals.kcal, protein: vals.protein, carbs: vals.carbs, fat: vals.fat
+        })
+      : Store.addFood({
+          name: name, serving: serving,
+          kcal: vals.kcal, protein: vals.protein, carbs: vals.carbs, fat: vals.fat
+        });
+
     Store.addEntry(day, {
       foodId: f.id, name: f.name, qty: qty,
       kcal: f.kcal, protein: f.protein, carbs: f.carbs, fat: f.fat
     });
     $('foodPick').value = '';
     $('foodQty').value = 1;
+    closeFoodEdit();
     closeLookup();
     render();
   }
@@ -926,10 +1045,10 @@
   });
 
   $('foodLog').addEventListener('click', function (ev) {
-    var b = ev.target.closest('[data-rm]');
-    if (!b) return;
-    Store.removeEntry(b.dataset.rm);
-    render();
+    var rm = ev.target.closest('[data-rm]');
+    if (rm) { Store.removeEntry(rm.dataset.rm); render(); return; }
+    var ed = ev.target.closest('[data-edit]');
+    if (ed) openFoodEditForEntry(ed.dataset.edit);
   });
 
   /* train */
@@ -1005,7 +1124,15 @@
     var b = ev.target.closest('[data-pick]');
     if (!b) return;
     var rec = lookup.results[Number(b.dataset.pick)];
-    if (rec) logLookupResult(rec);
+    if (rec) openFoodEditForResult(rec);
+  });
+
+  /* amount editor */
+  $('feGrams').addEventListener('input', feRescale);
+  $('feSave').addEventListener('click', saveFoodEdit);
+  $('feCancel').addEventListener('click', closeFoodEdit);
+  $('foodEdit').addEventListener('keydown', function (ev) {
+    if (ev.key === 'Enter') { ev.preventDefault(); saveFoodEdit(); }
   });
 
   /* food lookup — barcode */

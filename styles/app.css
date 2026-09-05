@@ -368,3 +368,15 @@ code {
   font-family: var(--font-mono); font-variant-numeric: tabular-nums;
   font-size: 0.875rem; color: var(--text-muted); flex: 0 0 auto;
 }
+
+/* A logged line is a button: tapping it opens the amount editor. Styled
+   to look like the list row it replaces rather than like a control —
+   the affordance is the whole row, which is the only target big enough
+   to hit reliably on a phone. */
+.list .rowedit {
+  display: flex; align-items: center; gap: var(--s-2);
+  flex: 1; min-width: 0; text-align: left;
+  background: none; border: 0; padding: 0; margin: 0;
+  color: inherit; font: inherit; cursor: pointer;
+}
+.list .rowedit:hover .name b { color: var(--accent); }

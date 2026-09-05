@@ -88,6 +88,30 @@
         <div class="hint" id="lookupStatus"></div>
         <ul class="list" id="lookupResults"></ul>
       </div>
+      <div class="card" id="foodEdit" hidden style="margin:var(--s-3) 0 0;background:var(--paper)">
+        <h2 id="feTitle">Amount</h2>
+        <div class="row" id="feGramsRow" hidden>
+          <label class="field" style="margin:0"><span>Amount (g)</span>
+            <input type="number" id="feGrams" inputmode="decimal" step="1" min="0"></label>
+          <label class="field grow-0" style="margin:0;width:96px"><span>Servings</span>
+            <input type="number" id="feQtyG" inputmode="decimal" step="0.25" min="0" value="1"></label>
+        </div>
+        <div class="row" id="feQtyRow">
+          <label class="field" style="margin:0"><span>Servings</span>
+            <input type="number" id="feQty" inputmode="decimal" step="0.25" min="0"></label>
+        </div>
+        <div class="row">
+          <label class="field"><span>Cal</span><input type="number" id="feKcal" inputmode="numeric"></label>
+          <label class="field"><span>P (g)</span><input type="number" id="feP" inputmode="decimal"></label>
+          <label class="field"><span>C (g)</span><input type="number" id="feC" inputmode="decimal"></label>
+          <label class="field"><span>F (g)</span><input type="number" id="feF" inputmode="decimal"></label>
+        </div>
+        <div class="row">
+          <button class="btn primary" id="feSave">Log it</button>
+          <button class="btn grow-0" id="feCancel">Cancel</button>
+        </div>
+        <div class="hint" id="feHint"></div>
+      </div>
       <div class="row" style="margin-top:var(--s-2)">
         <label class="field" style="margin:0">
           <span class="sr">Quick calories</span>

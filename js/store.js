@@ -378,6 +378,28 @@ var Store = (function () {
     return s.entries[id];
   }
 
+  /* Change a line that is already logged.
+
+     Only the fields passed are touched, and undefined is ignored rather
+     than written, so an edit that adjusts calories cannot silently blank
+     the macros next to them. */
+  function updateEntry(id, patch) {
+    var s = load();
+    var e = s.entries[id];
+    if (!e || e.deletedAt) return null;
+    ['name', 'qty', 'kcal', 'protein', 'carbs', 'fat'].forEach(function (k) {
+      if (patch[k] !== undefined) e[k] = patch[k];
+    });
+    touch(e);
+    save();
+    return e;
+  }
+
+  function entry(id) {
+    var e = load().entries[id];
+    return (e && !e.deletedAt) ? e : null;
+  }
+
   function removeEntry(id) {
     var s = load();
     if (!s.entries[id]) return;
@@ -566,7 +588,7 @@ var Store = (function () {
     setSteps: setSteps, stepsOn: stepsOn,
     weightPoints: weightPoints, intakeMap: intakeMap, macroMap: macroMap, loggedDates: loggedDates,
     setWeight: setWeight, setNote: setNote, setHabit: setHabit,
-    addEntry: addEntry, removeEntry: removeEntry,
+    addEntry: addEntry, updateEntry: updateEntry, entry: entry, removeEntry: removeEntry,
     addFood: addFood, removeFood: removeFood, findFoodByName: findFoodByName,
     addHabit: addHabit, removeHabit: removeHabit, setSetting: setSetting,
     exportJSON: exportJSON, importJSON: importJSON, reset: reset, clearLocal: clearLocal
