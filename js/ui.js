@@ -10,6 +10,11 @@
 (function () {
 
   var $ = function (id) { return document.getElementById(id); };
+
+  /* Bumped by hand on each deploy, and shown under Setup → Version.
+     Its only job is to let "it still looks old" be answered with a
+     number instead of a guess. Keep it in step with CACHE in sw.js. */
+  var BUILD = '2026-09-05.5';
   var day = WL.todayKey();
   var range = 30;
   var foodFilterText = '';
@@ -593,9 +598,25 @@
      the difference between sync working tonight and sync waiting on a
      dashboard setting. */
   function renderPasswordForm(body) {
+    /* An empty form is the same shape whether you have never signed in
+       or were signed in five minutes ago, and those need different
+       words. On iOS the second case is common and looks like a bug:
+       the installed app has its own storage, separate from Safari, so
+       signing in on the website leaves the app asking again. Naming
+       the account it remembers turns "why is this broken" into "oh,
+       right". */
+    var known = Sync.lastAccount();
+    if (authEmail === '' && known) authEmail = known;
+
+    var intro = known
+      ? 'This device is signed out of <b>' + esc(known) + '</b>. Sign in again and your log comes back — ' +
+        'nothing was lost, it is all still in the cloud and on any device you are signed in on. ' +
+        'On iPhone the app you installed to the home screen keeps its own separate login from Safari, ' +
+        'so signing in here is a separate step from signing in on the website.'
+      : 'Sign in to sync across your devices. Use the same account on each one.';
+
     body.innerHTML =
-      '<p class="hint" style="margin:0 0 var(--s-3)">Sign in to sync across your devices. ' +
-      'Use the same account on each one.</p>' +
+      '<p class="hint" style="margin:0 0 var(--s-3)">' + intro + '</p>' +
       '<label class="field"><span>Email</span>' +
       '<input type="email" id="pwEmail" inputmode="email" autocomplete="username" ' +
       'autocapitalize="off" spellcheck="false" placeholder="you@example.com" value="' + esc(authEmail) + '"></label>' +
@@ -665,6 +686,11 @@
     $('storageHint').textContent = dates.length + ' days logged · ' +
       (bytes < 1024 ? bytes + ' bytes' : (bytes / 1024).toFixed(1) + ' KB') +
       (dates.length ? ' · since ' + dates[0] : '');
+
+    $('buildHint').textContent = 'Build ' + BUILD +
+      (('serviceWorker' in navigator)
+        ? '. Updates are fetched on every launch and applied straight away.'
+        : '. This browser has no offline support, so you are always on the latest.');
 
     $('storageNote').textContent = (Sync.configured() && Sync.signedIn())
       ? 'This device keeps a full local copy and works offline; the cloud copy is the backup. ' +
@@ -1177,6 +1203,26 @@
     };
     r.readAsText(file);
   });
+  /* The manual escape hatch. The automatic path should make this
+     unnecessary, but "unnecessary" is not what you want to be told
+     while looking at a screen that is visibly out of date. */
+  $('updateBtn').addEventListener('click', function () {
+    if (!('serviceWorker' in navigator)) { window.location.reload(); return; }
+    $('updateStatus').textContent = 'Checking…';
+    navigator.serviceWorker.getRegistration().then(function (reg) {
+      if (!reg) { window.location.reload(); return; }
+      return reg.update().then(function () {
+        /* If an update was found, the controllerchange handler reloads
+           the page and this message is never read. */
+        $('updateStatus').textContent = reg.installing || reg.waiting
+          ? 'Update found — reloading…'
+          : 'Already on the latest build.';
+      });
+    }).catch(function (e) {
+      $('updateStatus').textContent = 'Could not check: ' + String(e.message || e);
+    });
+  });
+
   $('resetBtn').addEventListener('click', function () {
     if (!confirm('Erase every weigh-in, food and habit on this device? Export first if you want a copy.')) return;
     if (!confirm('Last check — this cannot be undone.')) return;
@@ -1207,8 +1253,55 @@
   window.addEventListener('online', function () { renderSyncPill(); doSync('online'); });
   window.addEventListener('offline', renderSyncPill);
 
+  /* ---------------------------------------------------------------
+     STAYING UP TO DATE
+
+     A home-screen app has no address bar and no reload button, so if
+     it does not go looking for a new version there is no way for the
+     person holding it to ask for one. Three things together:
+
+       1. sw.js is network-first for the app's own code, so a launch
+          with signal already gets current files.
+       2. The registration is asked to update on launch and every time
+          the app comes back to the foreground.
+       3. When a new worker takes over, the page reloads itself once.
+
+     The reload is guarded by a flag rather than a timestamp: the
+     classic failure here is a worker that keeps activating and a page
+     that keeps reloading, and a flag makes that impossible within a
+     page's lifetime. Reloading at all is only safe because everything
+     typed into this app is written to localStorage on the keystroke —
+     there is no in-flight form state to lose. */
+  var reloading = false;
+
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('sw.js').catch(function () { /* offline is a bonus, not a requirement */ });
+    navigator.serviceWorker.register('sw.js').then(function (reg) {
+      function check() {
+        if (document.visibilityState !== 'visible') return;
+        reg.update().catch(function () { /* offline: try again next time */ });
+      }
+      check();
+      document.addEventListener('visibilitychange', check);
+
+      /* A worker that installs while an old one is still controlling
+         the page sits in `waiting` until every tab closes. Telling it
+         to skip means the update lands on this launch, not the next. */
+      reg.addEventListener('updatefound', function () {
+        var next = reg.installing;
+        if (!next) return;
+        next.addEventListener('statechange', function () {
+          if (next.state === 'installed' && navigator.serviceWorker.controller) {
+            next.postMessage({ type: 'SKIP_WAITING' });
+          }
+        });
+      });
+    }).catch(function () { /* offline is a bonus, not a requirement */ });
+
+    navigator.serviceWorker.addEventListener('controllerchange', function () {
+      if (reloading) return;
+      reloading = true;
+      window.location.reload();
+    });
   }
 
   render();

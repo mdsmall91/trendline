@@ -296,14 +296,38 @@ var Sync = (function () {
       });
   }
 
+  /* The last email that successfully signed in here, kept separately
+     from the session and outliving it.
+
+     iOS is the reason. A home-screen app has its own storage, entirely
+     separate from Safari, so signing in on the website leaves the
+     installed app signed out — and an empty form gives no hint that
+     this is what happened. Remembering the address lets the app say
+     which account it is asking about instead of just asking again. */
+  var LAST_EMAIL_KEY = 'tl.lastEmail';
+
+  function rememberAccount(email) {
+    try {
+      if (email) localStorage.setItem(LAST_EMAIL_KEY, String(email));
+    } catch (e) {}
+  }
+
+  function lastAccount() {
+    var a = readAuth();
+    if (a && a.email) return a.email;
+    try { return localStorage.getItem(LAST_EMAIL_KEY) || ''; } catch (e) { return ''; }
+  }
+
   function storeSession(j, email) {
+    var resolved = (j.user && j.user.email) || email || (readAuth() || {}).email;
     writeAuth({
       access_token: j.access_token,
       refresh_token: j.refresh_token,
       expires_at: Date.now() + ((j.expires_in || 3600) * 1000),
       user_id: (j.user && j.user.id) || (readAuth() || {}).user_id,
-      email: (j.user && j.user.email) || email || (readAuth() || {}).email
+      email: resolved
     });
+    rememberAccount(resolved);
   }
 
   function signOut() {
@@ -311,6 +335,25 @@ var Sync = (function () {
     var s = Store.load();
     s.sync.userId = null; s.sync.email = null; s.sync.cursors = {}; s.sync.lastSyncAt = null;
     Store.flush();
+  }
+
+  /* Is this refusal actually about the token, or about the weather?
+
+     Signing someone out is destructive — it costs them a password
+     entry and, on a phone, usually a trip to a password manager. It
+     must only happen when the refresh token is genuinely dead.
+
+     Everything else the endpoint can return is temporary: 429 when the
+     built-in mailer rate limit has been tripped, 5xx when Supabase is
+     having a moment, and 503 when a free project has paused after a
+     week of no activity — which is the normal state of a personal app
+     you did not open on holiday. Treating those as "session expired"
+     is how you get logged out of an app you never logged out of. */
+  function isDeadRefreshToken(status, body) {
+    if (status !== 400 && status !== 401) return false;
+    var j = body || {};
+    var text = String(j.error || j.error_code || j.msg || j.message || '').toLowerCase();
+    return /invalid[_ ]grant|refresh[_ ]token|already used|not found/.test(text);
   }
 
   /* Refresh a minute early so a long request cannot start on a token
@@ -325,8 +368,18 @@ var Sync = (function () {
       headers: { 'apikey': c.SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
       body: JSON.stringify({ refresh_token: a.refresh_token })
     }).then(function (r) {
-      return r.json().then(function (j) {
-        if (!r.ok) { writeAuth(null); throw new Error('session expired — sign in again'); }
+      return r.text().then(function (t) {
+        var j = null;
+        try { j = t ? JSON.parse(t) : null; } catch (e) { j = null; }
+        if (!r.ok) {
+          if (isDeadRefreshToken(r.status, j)) {
+            writeAuth(null);
+            throw new Error('Session expired — sign in again.');
+          }
+          /* Keep the session and say what actually happened. The next
+             sync retries; nothing has been lost. */
+          throw new Error('Could not reach the account service (' + r.status + '). Still signed in — it will retry.');
+        }
         storeSession(j, a.email);
         return j.access_token;
       });
@@ -503,7 +556,8 @@ var Sync = (function () {
     pickWinner: pickWinner, mergeCollection: mergeCollection, collectDirty: collectDirty,
     toRow: toRow, fromRow: fromRow, settingsToRow: settingsToRow, settingsFromRow: settingsFromRow,
     maxSyncedAt: maxSyncedAt, snake: snake, camel: camel, TABLE_NAMES: TABLE_NAMES,
-    isSecretKey: isSecretKey,
+    isSecretKey: isSecretKey, isDeadRefreshToken: isDeadRefreshToken,
+    lastAccount: lastAccount,
     /* stateful */
     configured: configured, configSource: configSource,
     setConfig: setConfig, clearConfig: clearConfig,

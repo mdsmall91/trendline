@@ -254,14 +254,14 @@ vendor/                 html5-qrcode, vendored rather than CDN-loaded so
                         scanning still works with no signal. Lazy-loaded.
 supabase/schema.sql     tables, indexes, RLS policies
 SETUP.md                Supabase walkthrough
-tests/                  254 assertions
+tests/                  263 assertions
 ```
 
 ## Tests
 
 ```
 node tests/tests.js         # 106 — the engine, incl. training calories
-node tests/sync-tests.js    # 77  — merge logic, migration, wire format
+node tests/sync-tests.js    # 86  — merge logic, wire format, session safety
 node tests/food-tests.js    # 71  — food lookup normalizers, no network
 ```
 
@@ -277,6 +277,10 @@ The two that matter most:
   displayed*, not half of the unrounded figure. Rounding in the wrong order
   puts the two numbers on screen a calorie apart, and the first person to
   check the arithmetic stops trusting both.
+- **When to sign someone out:** only a genuinely dead refresh token does
+  it. A 429, a 5xx, or a paused free project must not, because signing
+  someone out costs a password entry and a trip to a password manager, and
+  "logged out of an app I never logged out of" is the result.
 - **Two-device convergence:** two devices log different meals on the same
   day while offline, then edit the same record, then one deletes. Both must
   end up identical, with nothing lost and nothing resurrected — and a third

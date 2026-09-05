@@ -117,6 +117,31 @@
 
   check('workouts are in the synced table list', Sync.TABLE_NAMES.indexOf('workouts') >= 0);
 
+  /* ---------- when to sign someone out ----------
+     Signing out is destructive: it costs a password entry, and on a
+     phone usually a trip to a password manager. It must happen only
+     when the refresh token is genuinely dead, never because Supabase
+     was briefly unhappy. */
+
+  check('invalid_grant is a dead token',
+    Sync.isDeadRefreshToken(400, { error: 'invalid_grant' }));
+  check('a named refresh_token failure is a dead token',
+    Sync.isDeadRefreshToken(400, { error_code: 'refresh_token_not_found' }));
+  check('the prose form is a dead token',
+    Sync.isDeadRefreshToken(401, { msg: 'Invalid Refresh Token: Already Used' }));
+
+  check('429 is NOT a dead token — that is the mailer rate limit',
+    !Sync.isDeadRefreshToken(429, { msg: 'Email rate limit exceeded' }));
+  check('500 is NOT a dead token',
+    !Sync.isDeadRefreshToken(500, { msg: 'internal error' }));
+  check('503 is NOT a dead token — that is a paused free project',
+    !Sync.isDeadRefreshToken(503, { msg: 'project is paused' }));
+  check('a 400 about something else is NOT a dead token',
+    !Sync.isDeadRefreshToken(400, { msg: 'malformed request body' }));
+  check('an empty body is NOT taken as a dead token',
+    !Sync.isDeadRefreshToken(400, null));
+  check('a 200 is never a dead token', !Sync.isDeadRefreshToken(200, {}));
+
   var srow = Sync.settingsToRow({ goalWeight: 190, alpha: 0.15, updatedAt: T1, dirty: true }, 'user-1');
   eq('settings payload is nested under data', srow.data.goalWeight, 190);
   check('settings payload drops local flags', !('dirty' in srow.data) && !('updatedAt' in srow.data));
