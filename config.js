@@ -18,6 +18,6 @@
    ============================================================= */
 
 var CONFIG = {
-  SUPABASE_URL: '',       // https://xxxxxxxxxxxx.supabase.co
-  SUPABASE_ANON_KEY: ''   // the "anon / public" key, not the service role key
+  SUPABASE_URL: 'https://mmwymuxutgmwfmvkvxzw.supabase.co',
+  SUPABASE_ANON_KEY: 'sb_publishable_tSgaTLZRuwluENMxA2Nlgw_XVwFFrWy'
 };
