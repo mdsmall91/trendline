@@ -56,6 +56,17 @@
 
 * { box-sizing: border-box; }
 
+/* The `hidden` attribute only works because the browser's own stylesheet
+   says display:none — and ANY author rule with a display beats it, because
+   author styles outrank the user agent regardless of specificity. So every
+   `.row` and `.card` in here silently ignored `hidden`, and the amount
+   editor showed two Servings fields at once with stale values in the row
+   that was supposed to be gone.
+
+   One rule, once, rather than a `[hidden]` override per component — the
+   scanner overlay already needed its own and that was the warning. */
+[hidden] { display: none !important; }
+
 html { -webkit-text-size-adjust: 100%; }
 
 body {
@@ -321,7 +332,6 @@ code {
   padding: var(--s-4);
   padding-bottom: max(var(--s-4), env(safe-area-inset-bottom));
 }
-.scanner[hidden] { display: none; }
 .scanner-in {
   width: 100%; max-width: 460px;
   background: var(--paper); border-radius: var(--radius);

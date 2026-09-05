@@ -14,7 +14,7 @@
   /* Bumped by hand on each deploy, and shown under Setup → Version.
      Its only job is to let "it still looks old" be answered with a
      number instead of a guess. Keep it in step with CACHE in sw.js. */
-  var BUILD = '2026-09-05.10';
+  var BUILD = '2026-09-05.11';
   var day = WL.todayKey();
   var range = 30;
   var foodFilterText = '';
@@ -570,6 +570,7 @@
         'or type over any of them.'
       : 'Serving: ' + rec.serving + '. Change anything that looks wrong before logging it.';
     $('foodEdit').hidden = false;
+    revealFoodEdit();
     (perGram ? $('feGrams') : $('feQty')).focus();
   }
 
@@ -580,6 +581,10 @@
     $('feTitle').textContent = e.name || 'Logged food';
     $('feGramsRow').hidden = true;
     $('feQtyRow').hidden = false;
+    /* Blanked as well as hidden. A stale 30g sitting in a row that is
+       supposed to be gone is exactly what made this confusing, and
+       belt-and-braces costs two lines. */
+    feSet('feGrams', ''); feSet('feQtyG', '');
     feSet('feQty', typeof e.qty === 'number' ? e.qty : 1);
     feSet('feKcal', e.kcal); feSet('feP', e.protein);
     feSet('feC', e.carbs); feSet('feF', e.fat);
@@ -588,7 +593,15 @@
       'by the servings above.';
     $('foodEdit').hidden = false;
     lookup.open = false; renderLookup();
+    revealFoodEdit();
     $('feKcal').focus();
+  }
+
+  /* Opened from a row further up the log, the panel can land off-screen
+     behind the keyboard — you tap a line and nothing appears to happen. */
+  function revealFoodEdit() {
+    try { $('foodEdit').scrollIntoView({ block: 'center', behavior: 'smooth' }); }
+    catch (e) { $('foodEdit').scrollIntoView(); }
   }
 
   function closeFoodEdit() {
@@ -840,27 +853,13 @@
     $('stAlpha').value = s.alpha;
     $('alphaVal').textContent = Number(s.alpha).toFixed(2);
 
-    /* A key committed in config.js applies to every device, so the field
-       shows it as already handled rather than inviting a second copy. */
-    var cfgKey = (typeof CONFIG !== 'undefined' && CONFIG && CONFIG.USDA_API_KEY) || '';
-    if (document.activeElement !== $('usdaKey')) {
-      $('usdaKey').value = cfgKey ? '' : FoodAPI.usdaKey();
-    }
-    $('usdaKey').placeholder = cfgKey ? 'set in config.js — nothing to do here' : 'paste the key here';
-    $('usdaKey').disabled = !!cfgKey;
-    if (!$('usdaStatus').dataset.sticky) {
-      $('usdaStatus').textContent = FoodAPI.hasUsdaKey()
-        ? 'Key is set. Name search is on.'
-        : 'No key yet. Barcode scanning still works without one.';
-    }
+    /* The USDA key lives in config.js and applies to every device, so
+       there is nothing here to configure. The card that used to sit in
+       Setup was a control for a decision already made — clutter on the
+       one screen that should stay legible. Set FoodAPI.setUsdaKey() from
+       the console if a device ever needs its own.
 
-    var bytes = 0;
-    try { bytes = (localStorage.getItem(Store.KEY) || '').length; } catch (e) {}
-    var dates = Store.loggedDates();
-    $('storageHint').textContent = dates.length + ' days logged · ' +
-      (bytes < 1024 ? bytes + ' bytes' : (bytes / 1024).toFixed(1) + ' KB') +
-      (dates.length ? ' · since ' + dates[0] : '');
-
+     */
     $('buildHint').textContent = 'Build ' + BUILD +
       (('serviceWorker' in navigator)
         ? '. Updates are fetched on every launch and applied straight away.'
@@ -1227,24 +1226,6 @@
   });
   document.addEventListener('keydown', function (ev) {
     if (ev.key === 'Escape' && !$('scannerOverlay').hidden) closeScanner();
-  });
-
-  /* USDA key */
-  function usdaSay(text) {
-    $('usdaStatus').dataset.sticky = '1';
-    $('usdaStatus').textContent = text;
-  }
-  $('usdaSave').addEventListener('click', function () {
-    var k = $('usdaKey').value.trim();
-    FoodAPI.setUsdaKey(k);
-    usdaSay(k ? 'Saved on this device. Put it in config.js to have it on all of them.' : 'Key cleared.');
-  });
-  $('usdaTest').addEventListener('click', function () {
-    if (!FoodAPI.hasUsdaKey()) { usdaSay('Nothing to test — no key set.'); return; }
-    usdaSay('Testing…');
-    FoodAPI.searchFoods('egg', { limit: 1 }).then(function (rows) {
-      usdaSay(rows.length ? 'Working — the key is good.' : 'The key was accepted but returned nothing.');
-    }).catch(function (e) { usdaSay(String(e.message || e)); });
   });
 
   $('habitToday').addEventListener('change', function (ev) {
