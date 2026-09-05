@@ -85,6 +85,38 @@
     return d.habits && typeof d.habits === 'object';
   })());
 
+  /* Workouts are the first table with a JSON array column and the first
+     with a createdAt, so the mapping gets its own round trip rather than
+     riding on the entries one. */
+  var wrec = {
+    id: 'w1', date: '2026-09-05', kind: 'lifting', activity: 'lift_hard',
+    name: 'Push day', minutes: 50, steps: null, kcal: null,
+    sets: [{ exercise: 'Bench', sets: 3, reps: 8, weight: 185, unit: 'lb' }],
+    createdAt: T1, updatedAt: T1, deletedAt: null, dirty: true
+  };
+  var wrow = Sync.toRow('workouts', wrec, 'user-1');
+  eq('workout createdAt becomes created_at', wrow.created_at, T1);
+  eq('workout kind is carried', wrow.kind, 'lifting');
+  check('workout sets go over as an array', Array.isArray(wrow.sets) && wrow.sets.length === 1);
+  check('a null minutes stays null rather than becoming 0', wrow.steps === null);
+  check('workout dirty flag is never sent', !('dirty' in wrow));
+
+  var wback = Sync.fromRow('workouts', wrow);
+  eq('workout round trip keeps the activity', wback.activity, 'lift_hard');
+  eq('workout round trip keeps minutes', wback.minutes, 50);
+  eq('workout round trip keeps the lifting detail', wback.sets[0].weight, 185);
+  eq('workout round trip keeps createdAt', wback.createdAt, T1);
+
+  /* A steps record and a session must survive the same mapping — they
+     share a table and differ only by kind. */
+  var srec = { id: 'w2', date: '2026-09-05', kind: 'steps', steps: 8400, updatedAt: T1, deletedAt: null };
+  var sback = Sync.fromRow('workouts', Sync.toRow('workouts', srec, 'user-1'));
+  eq('steps record survives the wire', sback.steps, 8400);
+  eq('steps record keeps its kind', sback.kind, 'steps');
+  check('a workout with no sets round trips as null', sback.sets === null, sback.sets);
+
+  check('workouts are in the synced table list', Sync.TABLE_NAMES.indexOf('workouts') >= 0);
+
   var srow = Sync.settingsToRow({ goalWeight: 190, alpha: 0.15, updatedAt: T1, dirty: true }, 'user-1');
   eq('settings payload is nested under data', srow.data.goalWeight, 190);
   check('settings payload drops local flags', !('dirty' in srow.data) && !('updatedAt' in srow.data));

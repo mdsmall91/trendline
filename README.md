@@ -254,14 +254,14 @@ vendor/                 html5-qrcode, vendored rather than CDN-loaded so
                         scanning still works with no signal. Lazy-loaded.
 supabase/schema.sql     tables, indexes, RLS policies
 SETUP.md                Supabase walkthrough
-tests/                  241 assertions
+tests/                  254 assertions
 ```
 
 ## Tests
 
 ```
 node tests/tests.js         # 106 — the engine, incl. training calories
-node tests/sync-tests.js    # 64  — merge logic, migration, key safety
+node tests/sync-tests.js    # 77  — merge logic, migration, wire format
 node tests/food-tests.js    # 71  — food lookup normalizers, no network
 ```
 
