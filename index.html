@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Trendline</title>
+<meta name="description" content="A personal weight, intake and habit log with an adaptive calorie target and cloud sync.">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#f7f5f1" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#1c1a18" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Trendline">
+<meta name="robots" content="noindex, nofollow">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%232f4f3f'/><path d='M8 22h16M10 22V13M16 22V9M22 22v-6' stroke='%23f7f5f1' stroke-width='2.6' stroke-linecap='round' fill='none'/></svg>">
+<link rel="stylesheet" href="styles/app.css">
+</head>
+<body>
+
+<header class="top">
+  <div class="top-in">
+    <h1 class="brand">Trendline</h1>
+    <button class="pill" id="syncPill" title="Sync status">&middot;</button>
+    <div class="datenav">
+      <button class="btn icon" id="prevDay" aria-label="Previous day">&larr;</button>
+      <span class="day" id="dayLabel">—</span>
+      <button class="btn icon" id="nextDay" aria-label="Next day">&rarr;</button>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+
+<!-- ============================ TODAY ============================ -->
+<section class="panel active" id="panel-today" role="tabpanel" aria-labelledby="tab-today">
+
+  <div class="card budget" id="budgetCard">
+    <div class="remaining" id="remaining">—</div>
+    <div class="unit" id="remainingLabel">calories left</div>
+    <div class="bar" id="budgetBar"><i style="width:0%"></i></div>
+    <div class="split">
+      <div>eaten<b id="eaten">0</b></div>
+      <div>target<b id="target">—</b></div>
+    </div>
+    <div class="hint" id="targetBasis"></div>
+  </div>
+
+  <div class="card">
+    <h2>Macros</h2>
+    <div class="macros" id="macros"></div>
+  </div>
+
+  <div class="card">
+    <h2>Weight</h2>
+    <div class="row">
+      <label class="field" style="margin:0">
+        <span class="sr">Weight in pounds</span>
+        <input type="number" id="weightInput" inputmode="decimal" step="0.1" min="0" placeholder="lb">
+      </label>
+      <button class="btn grow-0" id="saveWeight">Save</button>
+    </div>
+    <div class="hint" id="weightHint"></div>
+  </div>
+
+  <div class="card">
+    <h2>Food</h2>
+    <ul class="list" id="foodLog"></ul>
+    <div style="margin-top:var(--s-4)">
+      <div class="row">
+        <label class="field" style="margin:0">
+          <span class="sr">Food</span>
+          <input type="text" id="foodPick" list="foodList" placeholder="Search your foods, or type a name" autocomplete="off">
+          <datalist id="foodList"></datalist>
+        </label>
+        <label class="field grow-0" style="margin:0;width:76px">
+          <span class="sr">Servings</span>
+          <input type="number" id="foodQty" step="0.25" min="0" value="1" inputmode="decimal">
+        </label>
+        <button class="btn primary grow-0" id="addFoodLine">Add</button>
+      </div>
+      <div class="row" style="margin-top:var(--s-2)">
+        <label class="field" style="margin:0">
+          <span class="sr">Quick calories</span>
+          <input type="number" id="quickKcal" inputmode="numeric" placeholder="Quick add — calories only">
+        </label>
+        <button class="btn grow-0" id="addQuick">Add</button>
+      </div>
+      <div class="card" id="inlineNew" hidden style="margin:var(--s-3) 0 0;background:var(--paper)">
+        <h2>New food &mdash; <span id="inlineName"></span></h2>
+        <div class="row">
+          <label class="field"><span>Cal</span><input type="number" id="inKcal" inputmode="numeric"></label>
+          <label class="field"><span>P (g)</span><input type="number" id="inP" inputmode="decimal"></label>
+          <label class="field"><span>C (g)</span><input type="number" id="inC" inputmode="decimal"></label>
+          <label class="field"><span>F (g)</span><input type="number" id="inF" inputmode="decimal"></label>
+        </div>
+        <div class="row">
+          <button class="btn primary" id="inSave">Save &amp; log it</button>
+          <button class="btn grow-0" id="inCancel">Cancel</button>
+        </div>
+      </div>
+      <div class="hint" id="foodHint">Type a name you've logged before and it fills itself in. A new name asks for its macros once, then joins your library.</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Habits</h2>
+    <div id="habitToday"></div>
+  </div>
+
+  <div class="card">
+    <h2>Note</h2>
+    <textarea id="dayNote" rows="2" placeholder="Travel, illness, big sodium day — anything that explains the number later."></textarea>
+  </div>
+
+</section>
+
+<!-- ============================ TREND ============================ -->
+<section class="panel" id="panel-trend" role="tabpanel" aria-labelledby="tab-trend">
+
+  <div class="card">
+    <h2>Trend</h2>
+    <div class="seg" id="rangeSeg" style="margin-bottom:var(--s-4)">
+      <button data-range="30" aria-pressed="true">30d</button>
+      <button data-range="90" aria-pressed="false">90d</button>
+      <button data-range="180" aria-pressed="false">6mo</button>
+      <button data-range="9999" aria-pressed="false">All</button>
+    </div>
+    <div id="weightChart"></div>
+    <div class="legend">
+      <span><i style="background:var(--text-faint)"></i>weigh-in</span>
+      <span><i style="background:var(--accent)"></i>trend</span>
+      <span><i style="background:var(--warn)"></i>goal</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Where you are</h2>
+    <div class="stats" id="trendStats"></div>
+    <div id="trendNotes"></div>
+  </div>
+
+  <div class="card">
+    <h2>Intake vs target</h2>
+    <div id="intakeChart"></div>
+    <div class="hint" id="intakeSummary"></div>
+  </div>
+
+</section>
+
+<!-- ============================ FOODS ============================ -->
+<section class="panel" id="panel-foods" role="tabpanel" aria-labelledby="tab-foods">
+
+  <div class="card">
+    <h2>Add to library</h2>
+    <label class="field"><span>Name</span>
+      <input type="text" id="nfName" placeholder="Chobani 0% — 1 cup"></label>
+    <label class="field"><span>Serving described as</span>
+      <input type="text" id="nfServing" placeholder="1 cup / 100g / 1 bar"></label>
+    <div class="row">
+      <label class="field"><span>Cal</span><input type="number" id="nfKcal" inputmode="numeric"></label>
+      <label class="field"><span>P (g)</span><input type="number" id="nfP" inputmode="decimal"></label>
+      <label class="field"><span>C (g)</span><input type="number" id="nfC" inputmode="decimal"></label>
+      <label class="field"><span>F (g)</span><input type="number" id="nfF" inputmode="decimal"></label>
+    </div>
+    <button class="btn primary" id="saveFood">Save food</button>
+    <div class="hint">Leave calories blank and they'll be worked out from the macros.</div>
+  </div>
+
+  <div class="card">
+    <h2>Your foods (<span id="foodCount">0</span>)</h2>
+    <label class="field"><span class="sr">Filter</span>
+      <input type="text" id="foodFilter" placeholder="Filter"></label>
+    <ul class="list" id="foodLibrary"></ul>
+  </div>
+
+</section>
+
+<!-- ============================ HABITS ============================ -->
+<section class="panel" id="panel-habits" role="tabpanel" aria-labelledby="tab-habits">
+  <div class="card">
+    <h2>Last 30 days</h2>
+    <div class="hint" style="margin:0 0 var(--s-4)">Oldest at top left, today at bottom right.</div>
+    <div id="habitBoard"></div>
+  </div>
+  <div class="card">
+    <h2>Add a habit</h2>
+    <div class="row">
+      <label class="field" style="margin:0"><span class="sr">Habit name</span>
+        <input type="text" id="newHabit" placeholder="Walk after dinner"></label>
+      <button class="btn primary grow-0" id="addHabit">Add</button>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ SETTINGS ============================ -->
+<section class="panel" id="panel-settings" role="tabpanel" aria-labelledby="tab-settings">
+
+  <div class="card" id="accountCard">
+    <h2>Sync</h2>
+    <div id="accountBody"></div>
+  </div>
+
+  <div class="card">
+    <h2>You</h2>
+    <div class="row">
+      <label class="field"><span>Age</span><input type="number" id="stAge" inputmode="numeric"></label>
+      <label class="field"><span>Height (in)</span><input type="number" id="stHeight" inputmode="numeric"></label>
+    </div>
+    <label class="field"><span>Sex (for the fallback formula only)</span>
+      <select id="stSex">
+        <option value="unspecified">Prefer not to say</option>
+        <option value="male">Male</option>
+        <option value="female">Female</option>
+      </select></label>
+    <label class="field"><span>Activity (only used before your own data exists)</span>
+      <select id="stActivity">
+        <option value="sedentary">Sedentary — desk, little exercise</option>
+        <option value="light">Light — 1–3 days/week</option>
+        <option value="moderate">Moderate — 3–5 days/week</option>
+        <option value="active">Active — 6–7 days/week</option>
+        <option value="veryActive">Very active — physical job or two-a-days</option>
+      </select></label>
+  </div>
+
+  <div class="card">
+    <h2>Goal</h2>
+    <div class="row">
+      <label class="field"><span>Goal weight (lb)</span>
+        <input type="number" id="stGoalWeight" step="0.1" inputmode="decimal"></label>
+      <label class="field"><span>Rate (lb/week)</span>
+        <input type="number" id="stRate" step="0.25" inputmode="decimal"></label>
+    </div>
+    <div class="hint">0.5–1% of bodyweight per week is the range that holds onto muscle. Faster mostly buys you a rebound.</div>
+  </div>
+
+  <div class="card">
+    <h2>Macros &amp; smoothing</h2>
+    <div class="row">
+      <label class="field"><span>Protein g/lb</span>
+        <input type="number" id="stProtein" step="0.05" inputmode="decimal"></label>
+      <label class="field"><span>Fat g/lb</span>
+        <input type="number" id="stFat" step="0.05" inputmode="decimal"></label>
+    </div>
+    <label class="field"><span>Trend smoothing (<span id="alphaVal">0.15</span>)</span>
+      <input type="range" id="stAlpha" min="0.05" max="0.4" step="0.01" style="width:100%"></label>
+    <div class="hint">Lower is smoother and slower to react. 0.15 is a good default.</div>
+  </div>
+
+  <div class="card">
+    <h2>Your data</h2>
+    <div class="row" style="flex-wrap:wrap">
+      <button class="btn" id="exportBtn">Export JSON</button>
+      <button class="btn" id="importBtn">Import JSON</button>
+      <input type="file" id="importFile" accept="application/json,.json" hidden>
+    </div>
+    <div class="hint" id="storageHint"></div>
+    <div style="margin-top:var(--s-4)">
+      <button class="btn danger" id="resetBtn">Erase everything</button>
+    </div>
+    <div class="note plain" id="storageNote"></div>
+  </div>
+
+</section>
+
+</main>
+
+<nav class="tabs" role="tablist" aria-label="Sections">
+  <button id="tab-today"    role="tab" data-tab="today"    aria-selected="true"  aria-controls="panel-today">Today</button>
+  <button id="tab-trend"    role="tab" data-tab="trend"    aria-selected="false" aria-controls="panel-trend">Trend</button>
+  <button id="tab-foods"    role="tab" data-tab="foods"    aria-selected="false" aria-controls="panel-foods">Foods</button>
+  <button id="tab-habits"   role="tab" data-tab="habits"   aria-selected="false" aria-controls="panel-habits">Habits</button>
+  <button id="tab-settings" role="tab" data-tab="settings" aria-selected="false" aria-controls="panel-settings">Setup</button>
+</nav>
+
+<script src="config.js"></script>
+<script src="js/core.js"></script>
+<script src="js/store.js"></script>
+<script src="js/sync.js"></script>
+<script src="js/chart.js"></script>
+<script src="js/ui.js"></script>
+</body>
+</html>
