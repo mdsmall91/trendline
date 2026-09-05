@@ -454,6 +454,11 @@ var Store = (function () {
       steps: typeof w.steps === 'number' ? w.steps : null,
       kcal: typeof w.kcal === 'number' ? w.kcal : null,
       sets: Array.isArray(w.sets) ? w.sets : null,
+      /* Which catalog session this came from. Dropped here originally,
+         which quietly severed the link a progression model needs to
+         compare the same session across weeks. */
+      templateId: w.templateId || null,
+      finishedAt: null,
       createdAt: now(),
       deletedAt: null
     });
@@ -486,6 +491,131 @@ var Store = (function () {
       if (w.date === date && w.kind === 'steps') found = w;
     });
     return found;
+  }
+
+  /* ---------------------------------------------------------------
+     STRENGTH SESSIONS
+
+     A session is a workout record whose `sets` array holds one row per
+     PLANNED set, filled in as the set is done. Plan and result live in
+     the same row on purpose: the prescription that was on screen when
+     you lifted is the prescription the log should show forever, even
+     if the template is edited afterwards.
+
+     Each row:
+       ex        exercise id            targetMin/Max  prescribed range
+       name      display name at the    rirTarget      prescribed RIR
+                 time it was logged     unit           reps|seconds|meters
+       idx       set number             scope          total|per_side
+       load      what was actually      reps           what was actually
+                 selected                              achieved
+       rir       what it actually felt  done           logged or not
+                 like
+     --------------------------------------------------------------- */
+
+  function startSession(date, plan) {
+    var rows = [];
+    (plan.items || []).forEach(function (it) {
+      for (var i = 1; i <= (it.sets || 1); i++) {
+        rows.push({
+          ex: it.ex, name: it.name, idx: i,
+          targetMin: it.min, targetMax: it.max,
+          rirTarget: (it.rir === undefined ? null : it.rir),
+          unit: it.unit || 'reps',
+          scope: it.scope || 'total',
+          rest: it.rest || null,
+          load: null, reps: null, rir: null, done: false
+        });
+      }
+    });
+    return addWorkout(date, {
+      kind: 'lifting',
+      name: plan.name || 'Workout',
+      activity: plan.intensity || 'lift_moderate',
+      minutes: null,
+      templateId: plan.templateId || null,
+      sets: rows
+    });
+  }
+
+  /* Log one set in place. The row index is used rather than a search,
+     because two sets of the same exercise are deliberately identical
+     in every other respect and must stay individually addressable. */
+  function logSet(workoutId, rowIndex, result) {
+    var s = load();
+    var w = s.workouts[workoutId];
+    if (!w || w.deletedAt || !Array.isArray(w.sets)) return null;
+    var row = w.sets[rowIndex];
+    if (!row) return null;
+    ['load', 'reps', 'rir'].forEach(function (k) {
+      if (result[k] !== undefined) row[k] = result[k];
+    });
+    row.done = result.done !== undefined ? !!result.done : true;
+    /* A whole new array so a merge from another device compares the
+       session as one value rather than half-updating it. */
+    w.sets = w.sets.slice();
+    touch(w);
+    save();
+    return row;
+  }
+
+  /* Minutes are what the calorie estimate runs on, so a finished
+     session needs them. Asked for at the end rather than the start:
+     nobody knows how long a workout will take before doing it. */
+  function finishSession(workoutId, minutes) {
+    var s = load();
+    var w = s.workouts[workoutId];
+    if (!w || w.deletedAt) return null;
+    if (typeof minutes === 'number' && minutes > 0) w.minutes = minutes;
+    w.finishedAt = now();
+    touch(w);
+    save();
+    return w;
+  }
+
+  /* The most recent completed sets for an exercise, newest first.
+     This is the history a progression model reads. */
+  function exerciseHistory(exerciseId, limit) {
+    var out = [];
+    alive(load().workouts).forEach(function (w) {
+      if (!Array.isArray(w.sets)) return;
+      w.sets.forEach(function (r, i) {
+        if (r && r.done && r.ex === exerciseId) {
+          out.push({
+            date: w.date, workoutId: w.id, row: i,
+            load: r.load, reps: r.reps, rir: r.rir,
+            targetMin: r.targetMin, targetMax: r.targetMax, rirTarget: r.rirTarget
+          });
+        }
+      });
+    });
+    out.sort(function (a, b) { return a.date < b.date ? 1 : a.date > b.date ? -1 : b.row - a.row; });
+    return limit ? out.slice(0, limit) : out;
+  }
+
+  /* An unfinished session on this day, if there is one. Reopening the
+     app mid-workout should land you back in the workout. */
+  function openSession(date) {
+    var found = null;
+    alive(load().workouts).forEach(function (w) {
+      if (w.date === date && w.kind === 'lifting' && Array.isArray(w.sets) &&
+          w.sets.length && !w.finishedAt) found = w;
+    });
+    return found;
+  }
+
+  /* Change a workout in place — used when an exercise is appended to a
+     session that is already running. */
+  function updateWorkout(id, patch) {
+    var s = load();
+    var w = s.workouts[id];
+    if (!w || w.deletedAt) return null;
+    Object.keys(patch).forEach(function (k) {
+      if (patch[k] !== undefined) w[k] = patch[k];
+    });
+    touch(w);
+    save();
+    return w;
   }
 
   function removeWorkout(id) {
@@ -634,6 +764,9 @@ var Store = (function () {
     entriesFor: entriesFor, engineEntries: engineEntries,
     workoutsFor: workoutsFor, addWorkout: addWorkout, removeWorkout: removeWorkout,
     setSteps: setSteps, stepsOn: stepsOn,
+    startSession: startSession, logSet: logSet, finishSession: finishSession,
+    updateWorkout: updateWorkout,
+    exerciseHistory: exerciseHistory, openSession: openSession,
     weightPoints: weightPoints, intakeMap: intakeMap, macroMap: macroMap, loggedDates: loggedDates,
     setWeight: setWeight, setNote: setNote, setHabit: setHabit,
     addEntry: addEntry, updateEntry: updateEntry, entry: entry, removeEntry: removeEntry,

@@ -411,3 +411,34 @@ code {
    not controls, and a second set of tappable chips in a list row is
    noise competing with the row itself. */
 .list .tags { color: var(--text-faint); font-size: 0.6875rem; }
+
+/* =============================================================
+   THE SET LOGGER
+
+   Sized for a phone held in one hand between sets: the whole row is
+   readable at a glance and the only control is a button big enough to
+   hit without looking carefully.
+   ============================================================= */
+.exhead { padding: var(--s-4) 0 var(--s-2); }
+.exhead b { display: block; font-weight: 500; font-size: 0.9375rem; }
+.exhead small { display: block; color: var(--text-faint); font-size: 0.6875rem; margin-top: 2px; }
+
+.setrow {
+  display: flex; align-items: center; gap: var(--s-3);
+  padding: var(--s-2) 0; border-bottom: var(--hairline);
+}
+.setrow:last-child { border-bottom: 0; }
+.setrow .n {
+  flex: 0 0 22px; text-align: center;
+  font-family: var(--font-mono); font-size: 0.75rem; color: var(--text-faint);
+}
+.setrow .prescribed { flex: 1; font-size: 0.8125rem; color: var(--text-muted); }
+.setrow .actual {
+  font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+  font-size: 0.875rem; white-space: nowrap;
+}
+.setrow .actual.todo { color: var(--text-faint); }
+/* A logged set recedes. What matters while training is the next set,
+   not admiring the ones already done. */
+.setrow.done .prescribed { color: var(--text-faint); }
+.setrow.done .actual { color: var(--accent); }

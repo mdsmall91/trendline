@@ -270,6 +270,7 @@ js/store.js             local-first storage, v1 migration, dirty tracking
 js/sync.js              merge logic + Supabase REST/auth over plain fetch
 js/foodapi.js           Open Food Facts + USDA normalizers and lookups
 js/scanner.js           camera barcode scanning, wrapping the vendored lib
+js/gym.js               exercise catalog: search, substitution, selectable loads
 js/chart.js             hand-rolled SVG. No charting library.
 js/ui.js                render-on-change
 styles/app.css          self-contained tokens, light + dark
@@ -277,12 +278,14 @@ sw.js                   offline shell. Only caches same-origin assets —
                         a cached sync response would be worse than none.
 vendor/                 html5-qrcode, vendored rather than CDN-loaded so
                         scanning still works with no signal. Lazy-loaded.
+data/                   exercise catalog, session templates, this gym
+s                        real equipment. See data/README.md.
 supabase/schema.sql     tables, indexes, RLS policies
 supabase/steps-ingest.sql  write-only token + function for the
                         iOS Shortcut that posts daily steps
 SETUP.md                Supabase walkthrough
 STEPS-SHORTCUT.md       Garmin steps into the log, automatically
-tests/                  269 assertions
+tests/                  326 assertions
 ```
 
 ## Tests
@@ -291,6 +294,7 @@ tests/                  269 assertions
 node tests/tests.js         # 106 — the engine, incl. training calories
 node tests/sync-tests.js    # 86  — merge logic, wire format, session safety
 node tests/food-tests.js    # 77  — food lookup normalizers, no network
+node tests/gym-tests.js     # 42  — catalog search, substitution, real loads
 ```
 
 Or open `tests/tests.html`, `tests/sync-tests.html` and

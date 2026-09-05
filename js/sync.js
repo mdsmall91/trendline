@@ -35,7 +35,7 @@ var Sync = (function () {
     habits:   { fields: ['id', 'name', 'sort'] },
     days:     { fields: ['id', 'weight', 'note', 'habits'] },
     entries:  { fields: ['id', 'date', 'foodId', 'name', 'qty', 'kcal', 'protein', 'carbs', 'fat'] },
-    workouts: { fields: ['id', 'date', 'kind', 'activity', 'name', 'minutes', 'steps', 'kcal', 'sets', 'createdAt'] }
+    workouts: { fields: ['id', 'date', 'kind', 'activity', 'name', 'minutes', 'steps', 'kcal', 'sets', 'createdAt', 'templateId', 'finishedAt'] }
   };
   var TABLE_NAMES = ['foods', 'habits', 'days', 'entries', 'workouts'];
 

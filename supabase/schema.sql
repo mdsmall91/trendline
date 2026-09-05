@@ -108,6 +108,10 @@ create table if not exists public.workouts (
   steps      double precision,
   kcal       double precision,
   sets       jsonb,
+  -- which catalog session this was started from, and when it was
+  -- finished. An unfinished session is one you are still standing in.
+  template_id text,
+  finished_at timestamptz,
   created_at timestamptz,
   updated_at timestamptz not null,
   deleted_at timestamptz,
@@ -117,6 +121,8 @@ create table if not exists public.workouts (
 
 -- Columns added after the first release. Existing projects re-run this
 -- file and pick them up; a fresh one gets them from the create above.
+alter table public.workouts add column if not exists template_id text;
+alter table public.workouts add column if not exists finished_at timestamptz;
 alter table public.foods add column if not exists kind     text;
 alter table public.foods add column if not exists servings double precision;
 alter table public.foods add column if not exists tags     jsonb;

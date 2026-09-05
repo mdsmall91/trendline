@@ -21,9 +21,15 @@
   },
 
   "hoist_free_bar": {
+    "bar_weight_lb": 30,
+    "confidence": "user_reported",
+    "_note": "A bar-only set is 30 lb, not zero, so the first working load on a free-bar movement is never the stack number alone. Kept as its own field rather than folded into logged loads: if the figure is ever corrected, one number changes and no history is rewritten."
+  },
+
+  "curl_bar": {
     "bar_weight_lb": 25,
-    "confidence": "user_reported_approximate",
-    "_note": "Matt's estimate, not a measurement. It matters because a bar-only set is 25 lb rather than zero, so the first working load on a free-bar movement is not the stack number alone. Kept as a separate field rather than folded into logged loads: if the real figure turns out to be different, one number changes and no history has to be rewritten."
+    "confidence": "user_reported",
+    "_note": "Plate-loaded. Total load is 25 plus whatever plates are on it, which is why the curl bar and the Hoist bar cannot share a strength history despite both being bars."
   },
 
   "hoist_weight_stack": {

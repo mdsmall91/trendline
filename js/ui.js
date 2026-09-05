@@ -14,7 +14,7 @@
   /* Bumped by hand on each deploy, and shown under Setup → Version.
      Its only job is to let "it still looks old" be answered with a
      number instead of a guess. Keep it in step with CACHE in sw.js. */
-  var BUILD = '2026-09-05.12';
+  var BUILD = '2026-09-05.13';
   var day = WL.todayKey();
   var range = 30;
   var foodFilterText = '';
@@ -27,6 +27,10 @@
   var trendView = 'food';       /* Trend sub-tab: food | training */
   var libKind = 'food';         /* Foods panel: food | recipe */
   var tagFilter = null;         /* active tag chip, or null for all */
+  var trainView = 'today';      /* Train sub-tab: today | workouts | exercises */
+  var exQuery = '';             /* exercise search box */
+  var exOpenId = null;          /* exercise whose detail card is open */
+  var gymError = '';            /* catalog load failure, shown rather than swallowed */
 
   function fmt(n, dp) {
     if (n === null || n === undefined || !isFinite(n)) return '—';
@@ -500,6 +504,8 @@
   }
 
   function renderTrain(D) {
+    renderLiveSession(D);
+
     var list = Store.workoutsFor(day);
     var stepRec = Store.stepsOn(day);
 
@@ -507,66 +513,281 @@
       $('stepsInput').value = (stepRec && stepRec.steps) ? stepRec.steps : '';
     }
     if (!D.hasWeight) {
-      $('stepsHint').textContent = 'Log a weight first — step calories depend on what you are carrying.';
+      $('stepsHint').textContent = 'Log a weight first \u2014 step calories depend on what you are carrying.';
     } else if (stepRec && stepRec.steps) {
-      $('stepsHint').textContent = fmt(stepRec.steps) + ' steps ≈ ' +
+      $('stepsHint').textContent = fmt(stepRec.steps) + ' steps \u2248 ' +
         fmt(WL.stepsKcal(stepRec.steps, D.profile)) + ' cal, worked out from your weight and height.';
     } else {
       $('stepsHint').textContent = 'One number for the whole day. Saving again replaces it rather than adding to it.';
     }
 
     var sessions = list.filter(function (w) { return w.kind !== 'steps'; });
-    var rows = list.map(function (w) {
+    $('workoutLog').innerHTML = list.map(function (w) {
       var kc = WL.workoutKcal(w, D.profile);
       var sub = [];
       if (w.kind === 'steps') sub.push(fmt(w.steps) + ' steps');
       else {
         if (w.activity && ACTIVITY_LABEL[w.activity] && w.name) sub.push(ACTIVITY_LABEL[w.activity]);
         if (w.minutes) sub.push(fmt(w.minutes) + ' min');
-        var vol = WL.setsVolume(w.sets);
+        var done = countDone(w);
+        if (done.total) sub.push(done.done + ' of ' + done.total + ' sets');
+        var vol = sessionVolume(w);
         if (vol) sub.push(fmt(vol) + ' lb moved');
       }
       if (typeof w.kcal === 'number' && w.kcal > 0) sub.push('entered by hand');
       return '<li><span class="name"><b>' + esc(workoutLabel(w)) + '</b>' +
-        (sub.length ? '<small>' + esc(sub.join('  ·  ')) + '</small>' : '') + '</span>' +
+        (sub.length ? '<small>' + esc(sub.join('  \u00b7  ')) + '</small>' : '') + '</span>' +
         '<span class="kcal">' + fmt(kc) + '</span>' +
         '<button class="btn ghost" data-wo-rm="' + esc(w.id) + '" aria-label="Remove">&times;</button></li>';
-    }).join('');
-    $('workoutLog').innerHTML = rows ||
+    }).join('') ||
       '<li><span class="empty" style="flex:1">Nothing logged for this day.</span></li>';
 
     var t = D.training;
     $('trainStats').innerHTML = [
-      { k: 'Worked off', v: D.hasWeight ? fmt(t.gross) : '—', n: 'net calories' },
-      { k: 'Added to today', v: D.hasWeight ? '+' + fmt(t.credit) : '—', n: 'half of it' },
+      { k: 'Worked off', v: D.hasWeight ? fmt(t.gross) : '\u2014', n: 'net calories' },
+      { k: 'Added to today', v: D.hasWeight ? '+' + fmt(t.credit) : '\u2014', n: 'half of it' },
       { k: 'Sessions', v: String(sessions.length), n: stepRec ? 'plus steps' : '' },
-      { k: 'Eat up to', v: D.hasWeight ? fmt(D.target.target + t.credit) : '—', n: 'cal today' }
-    ].map(function (s) {
-      return '<div class="stat"><div class="k">' + esc(s.k) + '</div><div class="v">' + esc(s.v) +
-        '</div><div class="n">' + esc(s.n || '') + '</div></div>';
+      { k: 'Eat up to', v: D.hasWeight ? fmt(D.target.target + t.credit) : '\u2014', n: 'cal today' }
+    ].map(function (x) {
+      return '<div class="stat"><div class="k">' + esc(x.k) + '</div><div class="v">' + esc(x.v) +
+        '</div><div class="n">' + esc(x.n || '') + '</div></div>';
     }).join('');
 
-    $('trainNote').textContent = 'Every number here is net — what the activity cost above sitting ' +
+    $('trainNote').textContent = 'Every number here is net \u2014 what the activity cost above sitting ' +
       'still for the same minutes, because your measured burn already counts the sitting. ' +
-      'Half of it comes back as food. The other half is the margin against MET tables and step ' +
-      'counters both running generous.';
+      'Half of it comes back as food.';
 
-    /* 30-day burn. Uses the intake bar chart: same shape of question,
-       and one chart renderer is easier to keep honest than two. */
-    var end = WL.todayKey(), days = [], total = 0, active = 0;
-    for (var i = 29; i >= 0; i--) {
-      var k = WL.addDays(end, -i);
-      var d = WL.dayTraining(Store.workoutsFor(k), D.profile);
-      days.push({ date: k, kcal: d.gross });
-      if (d.gross > 0) { total += d.gross; active++; }
-    }
-    $('trainChart').innerHTML = Chart.intake(days, {
-      target: 0, empty: 'Log a session and the days appear here.'
+    $('trainToday').hidden = trainView !== 'today';
+    $('trainWorkouts').hidden = trainView !== 'workouts';
+    $('trainExercises').hidden = trainView !== 'exercises';
+
+    if (trainView === 'workouts') renderWorkoutTemplates();
+    if (trainView === 'exercises') renderExerciseIndex();
+  }
+
+  function countDone(w) {
+    var rows = Array.isArray(w.sets) ? w.sets : [];
+    var structured = rows.filter(function (r) { return r && r.ex; });
+    return { total: structured.length,
+             done: structured.filter(function (r) { return r.done; }).length };
+  }
+
+  /* Total external load moved in a session. Zero for bodyweight work,
+     which is honest: this measures external load, not effort. */
+  function sessionVolume(w) {
+    var rows = Array.isArray(w.sets) ? w.sets : [];
+    var v = 0;
+    rows.forEach(function (r) {
+      if (r && r.done && r.load > 0 && r.reps > 0) v += r.load * r.reps;
     });
-    $('trainSummary').textContent = active
-      ? active + ' of 30 days trained · ' + fmt(total) + ' net calories worked off · ' +
-        fmt(Math.round(total * WL.EXERCISE_CREDIT)) + ' given back as food'
-      : 'Nothing logged in the last 30 days.';
+    if (!v) v = WL.setsVolume(rows);   /* older free-text rows */
+    return Math.round(v);
+  }
+
+  /* ---------------------------------------------------------------
+     THE LIVE SESSION
+
+     One card, one tap per set. The interaction being optimised is the
+     one performed forty times in an hour with a phone in one hand;
+     everything else on this tab can afford to be a screen, this cannot.
+     --------------------------------------------------------------- */
+
+  function renderLiveSession(D) {
+    var w = Store.openSession(day);
+    $('liveCard').hidden = !w;
+    if (!w) return;
+
+    $('liveName').textContent = w.name || 'Workout';
+    var c = countDone(w);
+    $('liveProgress').textContent = c.done + ' / ' + c.total;
+
+    var rows = w.sets || [];
+    var html = '', lastEx = null;
+    rows.forEach(function (r, i) {
+      if (r.ex !== lastEx) {
+        var ex = Gym.ready() ? Gym.byId(r.ex) : null;
+        var note = ex ? Gym.loadNote(ex) : '';
+        html += '<div class="exhead"><b>' + esc(r.name) + '</b>' +
+          (note ? '<small>' + esc(note) + '</small>' : '') + '</div>';
+        lastEx = r.ex;
+      }
+      var target = r.targetMin === r.targetMax ? String(r.targetMin)
+        : r.targetMin + '\u2013' + r.targetMax;
+      var unit = r.unit === 'reps' ? '' : ' ' + r.unit;
+      html += '<div class="setrow' + (r.done ? ' done' : '') + '" data-set="' + i + '">' +
+        '<span class="n">' + r.idx + '</span>' +
+        '<span class="prescribed">' + esc(target + unit) +
+          (r.rirTarget !== null && r.rirTarget !== undefined ? ' @ ' + r.rirTarget + ' RIR' : '') +
+          (r.scope === 'per_side' ? ' each side' : '') + '</span>' +
+        (r.done
+          ? '<span class="actual">' + (r.load ? fmt(r.load) + ' lb \u00d7 ' : '') + fmt(r.reps) +
+            (r.rir !== null && r.rir !== undefined ? ' @ ' + fmt(r.rir) : '') + '</span>'
+          : '<span class="actual todo">\u2014</span>') +
+        '<button class="btn ghost grow-0" data-logset="' + i + '">' +
+          (r.done ? 'Edit' : 'Log') + '</button>' +
+        '</div>';
+    });
+    $('liveSets').innerHTML = html;
+
+    if (document.activeElement !== $('liveMinutes')) {
+      $('liveMinutes').value = w.minutes || '';
+    }
+    $('liveHint').textContent = c.done === c.total && c.total
+      ? 'All sets logged. Add the minutes and finish.'
+      : 'Log each set as you finish it. Closing the app does not lose the workout.';
+  }
+
+  /* ---------------------------------------------------------------
+     WORKOUT TEMPLATES
+     --------------------------------------------------------------- */
+
+  function renderWorkoutTemplates() {
+    if (!Gym.ready()) {
+      $('sessionList').innerHTML = '<li><span class="empty" style="flex:1">' +
+        esc(gymError || 'Loading the catalog\u2026') + '</span></li>';
+      $('programList').innerHTML = '';
+      return;
+    }
+    $('sessionList').innerHTML = Gym.sessions().map(function (se) {
+      var mins = se.estimated_minutes || [];
+      var sub = [];
+      if (mins.length === 2) sub.push(mins[0] + '\u2013' + mins[1] + ' min');
+      sub.push(se.items.length + ' exercises');
+      sub.push(se.difficulty);
+      return '<li><button class="rowedit" data-start="' + esc(se.id) + '">' +
+        '<span class="name"><b>' + esc(se.name) + '</b><small>' + esc(sub.join('  \u00b7  ')) +
+        '</small></span><span class="kcal">Start</span></button></li>';
+    }).join('');
+
+    $('programList').innerHTML = Gym.programs().map(function (p) {
+      var days = p.schedule.map(function (d) {
+        var se = Gym.sessions().filter(function (x) { return x.id === d.session_id; })[0];
+        return 'Day ' + d.day + ': ' + (se ? se.name : d.session_id);
+      });
+      return '<div style="margin-bottom:var(--s-5)">' +
+        '<div class="habit" style="border:0;padding:0 0 var(--s-1)">' +
+        '<span class="name">' + esc(p.name) + '</span>' +
+        '<span class="streak">' + p.days_per_week + '\u00d7/wk</span></div>' +
+        '<div class="hint" style="margin:0">' + esc(days.join(' \u00b7 ')) + '</div>' +
+        '<div class="hint">' + esc(p.notes || '') + '</div></div>';
+    }).join('');
+  }
+
+  /* ---------------------------------------------------------------
+     EXERCISE INDEX
+     --------------------------------------------------------------- */
+
+  var QUICK_PARTS = ['chest', 'back', 'shoulders', 'biceps', 'triceps',
+                     'quads', 'hamstrings', 'glutes', 'calves', 'core', 'cardio'];
+
+  function exRow(e) {
+    var sub = [];
+    sub.push(String(e.movement_pattern || '').replace(/_/g, ' '));
+    sub.push((e.equipment && e.equipment.length)
+      ? e.equipment.map(function (q) { return q.replace(/_/g, ' '); }).join(', ')
+      : 'bodyweight');
+    return '<li><button class="rowedit" data-ex="' + esc(e.id) + '">' +
+      '<span class="name"><b>' + esc(e.name) + '</b><small>' + esc(sub.join('  \u00b7  ')) +
+      '</small></span><span class="kcal">' + esc(e.difficulty.slice(0, 3)) + '</span></button></li>';
+  }
+
+  function renderExerciseIndex() {
+    if (!Gym.ready()) {
+      $('exStatus').textContent = gymError || 'Loading the catalog\u2026';
+      $('exResults').innerHTML = '';
+      $('exQuick').innerHTML = '';
+      return;
+    }
+    $('exQuick').innerHTML = QUICK_PARTS.map(function (p) {
+      return '<button class="chip" data-part="' + esc(p) + '" aria-pressed="' +
+        (exQuery === p) + '">' + esc(p) + '</button>';
+    }).join('');
+
+    var r = Gym.search(exQuery, { equipmentOnly: true });
+    $('exResults').innerHTML = r.primary.map(function (e) { return exRow(e); }).join('') ||
+      '<li><span class="empty" style="flex:1">Nothing matches. Try a body part, a movement ' +
+      'like \u201chinge\u201d, or a piece of kit like \u201cdumbbell\u201d.</span></li>';
+
+    $('exSecondaryWrap').hidden = !r.secondary.length;
+    $('exSecondary').innerHTML = r.secondary.map(function (e) { return exRow(e); }).join('');
+
+    $('exStatus').textContent = !exQuery
+      ? Gym.exercises().length + ' exercises, all of them possible with your kit.'
+      : r.mode === 'muscle'
+        ? r.primary.length + ' train this directly' +
+          (r.secondary.length ? ', ' + r.secondary.length + ' involve it' : '')
+        : r.primary.length + ' match \u201c' + exQuery + '\u201d';
+
+    renderExerciseDetail();
+  }
+
+  function renderExerciseDetail() {
+    var e = exOpenId && Gym.ready() ? Gym.byId(exOpenId) : null;
+    $('exDetail').hidden = !e;
+    if (!e) return;
+
+    $('exdName').textContent = e.name;
+    $('exdMeta').textContent = [
+      String(e.movement_pattern).replace(/_/g, ' '),
+      e.mechanic, e.laterality, e.difficulty,
+      (e.equipment && e.equipment.length
+        ? e.equipment.map(function (q) { return q.replace(/_/g, ' '); }).join(', ')
+        : 'bodyweight')
+    ].join('  \u00b7  ');
+
+    function block(title, arr) {
+      if (!arr || !arr.length) return '';
+      return '<div style="margin-top:var(--s-3)"><div style="font-size:0.6875rem;' +
+        'letter-spacing:0.08em;text-transform:uppercase;color:var(--text-muted)">' + esc(title) +
+        '</div><ul style="margin:var(--s-1) 0 0;padding-left:1.1em;font-size:0.875rem">' +
+        arr.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ul></div>';
+    }
+
+    var muscles = (e.primary_muscles || []).map(function (m) { return m.replace(/_/g, ' '); });
+    var also = (e.secondary_muscles || []).map(function (m) { return m.replace(/_/g, ' '); });
+
+    var subs = Gym.substitutes(e.id);
+    var same = subs.filter(function (x) { return x.samePattern; });
+    var partial = subs.filter(function (x) { return !x.samePattern; });
+
+    var html = block('Works', muscles) + block('Also', also) +
+      block('Setup', e.setup) + block('Cues', e.cues) +
+      block('Watch for', e.contraindication_notes);
+
+    if (same.length) {
+      html += '<div style="margin-top:var(--s-3)"><div style="font-size:0.6875rem;' +
+        'letter-spacing:0.08em;text-transform:uppercase;color:var(--text-muted)">Swap for</div>' +
+        same.map(function (x) {
+          return '<button class="chip" data-ex="' + esc(x.exercise.id) + '" ' +
+            'style="margin:var(--s-2) var(--s-2) 0 0">' + esc(x.exercise.name) + '</button>';
+        }).join('') + '</div>';
+    }
+    if (partial.length) {
+      /* Named differently on purpose. A bridge does not replace the
+         hamstring work in an RDL, and offering it as an equal swap is
+         how a program quietly loses a movement. */
+      html += '<div class="note" style="margin-top:var(--s-3)">Partial alternatives \u2014 these ' +
+        'overlap but do not cover the same work, so check what the session loses: ' +
+        partial.map(function (x) { return esc(x.exercise.name); }).join(', ') + '.</div>';
+    }
+
+    var loads = Gym.selectableLoads(e);
+    if (loads.length) {
+      html += '<div class="hint">Loads you can actually select: ' +
+        esc(loads.slice(0, 12).join(', ')) + (loads.length > 12 ? '\u2026' : '') + ' lb.</div>';
+    }
+    var note = Gym.loadNote(e);
+    if (note) html += '<div class="hint">' + esc(note) + '</div>';
+
+    var hist = Store.exerciseHistory(e.id, 3);
+    if (hist.length) {
+      html += '<div class="hint">Last: ' + hist.map(function (h) {
+        return (h.load ? fmt(h.load) + '\u00d7' : '') + fmt(h.reps) +
+          (h.rir !== null && h.rir !== undefined ? ' @' + fmt(h.rir) : '');
+      }).join(', ') + '</div>';
+    }
+
+    $('exdBody').innerHTML = html;
   }
 
   /* ---------------------------------------------------------------
@@ -1136,6 +1357,218 @@
 
   /* train */
   var workoutKind = 'cardio';
+
+  /* The catalog is 59KB and only the Train tab needs it, so it is
+     fetched the first time that tab is opened rather than on launch.
+     A failure is shown, not swallowed: an empty exercise list with no
+     explanation reads as a broken app. */
+  function ensureGym() {
+    if (Gym.ready()) return Promise.resolve(true);
+    return Gym.load().then(function () {
+      gymError = '';
+      render();
+      return true;
+    }).catch(function (e) {
+      gymError = String(e.message || e) + ' Reload once while online and it will be cached.';
+      render();
+      return false;
+    });
+  }
+
+  $('trainSeg').addEventListener('click', function (ev) {
+    var b = ev.target.closest('[data-train]');
+    if (!b) return;
+    trainView = b.dataset.train;
+    Array.prototype.forEach.call($('trainSeg').children, function (x) {
+      x.setAttribute('aria-pressed', String(x === b));
+    });
+    if (trainView !== 'today') ensureGym();
+    render();
+    window.scrollTo(0, 0);
+  });
+
+  /* ---- starting and running a session ---- */
+
+  $('sessionList').addEventListener('click', function (ev) {
+    var b = ev.target.closest('[data-start]');
+    if (!b || !Gym.ready()) return;
+    var se = Gym.sessions().filter(function (x) { return x.id === b.dataset.start; })[0];
+    if (!se) return;
+
+    var existing = Store.openSession(day);
+    if (existing && !confirm('There is already a workout in progress for this day. Start ' +
+        se.name + ' instead? The one in progress keeps whatever you logged.')) return;
+    if (existing) Store.finishSession(existing.id, existing.minutes || null);
+
+    Store.startSession(day, {
+      name: se.name,
+      templateId: se.id,
+      /* Sessions of mixed content are logged as moderate lifting for
+         the calorie estimate. Minutes, asked for at the end, are what
+         that estimate actually turns on. */
+      intensity: 'lift_moderate',
+      items: se.items.map(function (it) {
+        return {
+          ex: it.exercise_id,
+          name: Gym.name(it.exercise_id),
+          sets: it.sets,
+          min: it.target.min, max: it.target.max, unit: it.target.unit,
+          scope: it.target_scope, rest: it.rest_seconds, rir: it.rir_target
+        };
+      })
+    });
+    trainView = 'today';
+    Array.prototype.forEach.call($('trainSeg').children, function (x) {
+      x.setAttribute('aria-pressed', String(x.dataset.train === 'today'));
+    });
+    render();
+    window.scrollTo(0, 0);
+  });
+
+  /* Logging a set. A prompt rather than an inline form on purpose:
+     three numbers, one hand, phone propped against a dumbbell. An
+     inline editor here means scrolling to find the row you are on. */
+  $('liveSets').addEventListener('click', function (ev) {
+    var b = ev.target.closest('[data-logset]');
+    if (!b) return;
+    var w = Store.openSession(day);
+    if (!w) return;
+    var i = Number(b.dataset.logset);
+    var row = (w.sets || [])[i];
+    if (!row) return;
+
+    var ex = Gym.ready() ? Gym.byId(row.ex) : null;
+    var hist = Store.exerciseHistory(row.ex, 1)[0];
+    var suggested = row.load !== null ? row.load : (hist ? hist.load : null);
+
+    var loadStr = prompt(row.name + ' \u2014 set ' + row.idx + '\nLoad in lb' +
+      (ex && Gym.loadNote(ex) ? '\n(' + Gym.loadNote(ex) + ')' : '') +
+      (hist ? '\nLast time: ' + (hist.load || 0) + ' \u00d7 ' + hist.reps +
+        (hist.rir !== null && hist.rir !== undefined ? ' @ ' + hist.rir + ' RIR' : '') : '') +
+      '\nLeave blank for bodyweight.',
+      suggested === null ? '' : String(suggested));
+    if (loadStr === null) return;
+
+    var target = row.targetMin === row.targetMax ? String(row.targetMin)
+      : row.targetMin + '-' + row.targetMax;
+    var repsStr = prompt(row.name + ' \u2014 set ' + row.idx + '\n' +
+      (row.unit === 'reps' ? 'Reps' : row.unit.charAt(0).toUpperCase() + row.unit.slice(1)) +
+      ' (target ' + target + (row.scope === 'per_side' ? ' each side' : '') + ')',
+      row.reps === null ? '' : String(row.reps));
+    if (repsStr === null) return;
+
+    var rirStr = null;
+    if (row.rirTarget !== null && row.rirTarget !== undefined) {
+      rirStr = prompt(row.name + ' \u2014 set ' + row.idx +
+        '\nReps in reserve \u2014 how many more could you have done?' +
+        '\nTarget was ' + row.rirTarget + '. This is an estimate, not a score.',
+        row.rir === null ? String(row.rirTarget) : String(row.rir));
+      if (rirStr === null) return;
+    }
+
+    function n(v) { var x = parseFloat(v); return isFinite(x) ? x : null; }
+    Store.logSet(w.id, i, { load: n(loadStr), reps: n(repsStr), rir: n(rirStr), done: true });
+    render();
+  });
+
+  $('finishSession').addEventListener('click', function () {
+    var w = Store.openSession(day);
+    if (!w) return;
+    var mins = num($('liveMinutes'));
+    if (mins === null || mins <= 0) {
+      $('liveHint').textContent = 'Minutes first \u2014 the calorie estimate has nothing to work ' +
+        'from without them, and a session logged as zero minutes is worth zero calories.';
+      $('liveMinutes').focus();
+      return;
+    }
+    var c = countDone(w);
+    if (c.done < c.total && !confirm(c.done + ' of ' + c.total + ' sets logged. Finish anyway? ' +
+        'The unlogged sets are dropped from the record.')) return;
+    Store.finishSession(w.id, mins);
+    render();
+  });
+
+  $('abandonSession').addEventListener('click', function () {
+    var w = Store.openSession(day);
+    if (!w) return;
+    if (!confirm('Discard this workout and everything logged in it?')) return;
+    Store.removeWorkout(w.id);
+    render();
+  });
+
+  /* ---- the exercise index ---- */
+
+  $('exSearch').addEventListener('input', function () {
+    exQuery = $('exSearch').value.trim();
+    renderExerciseIndex();
+  });
+
+  $('exQuick').addEventListener('click', function (ev) {
+    var b = ev.target.closest('[data-part]');
+    if (!b) return;
+    exQuery = (exQuery === b.dataset.part) ? '' : b.dataset.part;
+    $('exSearch').value = exQuery;
+    renderExerciseIndex();
+  });
+
+  function openExercise(id) {
+    exOpenId = id;
+    renderExerciseIndex();
+    $('exDetail').scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }
+
+  ['exResults', 'exSecondary', 'exdBody'].forEach(function (id) {
+    $(id).addEventListener('click', function (ev) {
+      var b = ev.target.closest('[data-ex]');
+      if (b) openExercise(b.dataset.ex);
+    });
+  });
+
+  $('exdClose').addEventListener('click', function () {
+    exOpenId = null;
+    renderExerciseIndex();
+  });
+
+  /* Adding a single exercise to today's workout, starting one if there
+     is none. This is the path for "I just want to do some curls" — a
+     program is a nice-to-have, logging what you actually did is not. */
+  $('exdAdd').addEventListener('click', function () {
+    if (!exOpenId || !Gym.ready()) return;
+    var e = Gym.byId(exOpenId);
+    if (!e) return;
+    var w = Store.openSession(day);
+    var item = {
+      ex: e.id, name: e.name, sets: 3,
+      min: 8, max: 12, unit: e.tracking_mode || 'reps',
+      scope: e.laterality === 'unilateral' ? 'per_side' : 'total',
+      rest: 90, rir: 3
+    };
+    if (!w) {
+      Store.startSession(day, { name: 'Workout', items: [item] });
+    } else {
+      /* Appending to the live session rather than starting a second
+         one: two open workouts on a day is a state with no good
+         answer for which one a logged set belongs to. */
+      var rows = (w.sets || []).slice();
+      for (var i = 1; i <= item.sets; i++) {
+        rows.push({
+          ex: item.ex, name: item.name, idx: i,
+          targetMin: item.min, targetMax: item.max, rirTarget: item.rir,
+          unit: item.unit, scope: item.scope, rest: item.rest,
+          load: null, reps: null, rir: null, done: false
+        });
+      }
+      Store.updateWorkout(w.id, { sets: rows });
+    }
+    exOpenId = null;
+    trainView = 'today';
+    Array.prototype.forEach.call($('trainSeg').children, function (x) {
+      x.setAttribute('aria-pressed', String(x.dataset.train === 'today'));
+    });
+    render();
+    window.scrollTo(0, 0);
+  });
+
 
   function saveSteps() {
     Store.setSteps(day, num($('stepsInput')));
