@@ -21,6 +21,7 @@
 
 <header class="top">
   <div class="top-in">
+    <button class="btn icon" id="menuBtn" aria-label="Menu" aria-expanded="false">&#9776;</button>
     <h1 class="brand">Trendline</h1>
     <button class="pill" id="syncPill" title="Sync status">&middot;</button>
     <div class="datenav">
@@ -30,6 +31,12 @@
     </div>
   </div>
 </header>
+
+<nav class="menu" id="menu" hidden aria-label="More">
+  <button data-tab="foods">Foods &amp; recipes</button>
+  <button data-tab="habits">Habits</button>
+  <button data-tab="settings">Setup</button>
+</nav>
 
 <main class="wrap">
 
@@ -461,6 +468,13 @@
         <input type="number" id="stRate" step="0.25" inputmode="decimal"></label>
     </div>
     <div class="hint">0.5–1% of bodyweight per week is the range that holds onto muscle. Faster mostly buys you a rebound.</div>
+    <label class="field" style="margin-top:var(--s-4)"><span>Calorie target — set by hand (optional)</span>
+      <input type="number" id="stTargetOverride" inputmode="numeric" step="25" min="0"
+             placeholder="leave blank to use the calculated one"></label>
+    <div class="hint">Until two weeks of weight and food are logged, the target comes from a
+      formula, and formulas run high — an optimistic activity level alone can add a few hundred.
+      Put your own number here and it is used instead. The measured burn keeps being calculated
+      underneath, so clearing this goes back to it.</div>
   </div>
 
   <div class="card">
@@ -507,9 +521,7 @@
   <button id="tab-today"    role="tab" data-tab="today"    aria-selected="true"  aria-controls="panel-today">Today</button>
   <button id="tab-trend"    role="tab" data-tab="trend"    aria-selected="false" aria-controls="panel-trend">Trend</button>
   <button id="tab-train"    role="tab" data-tab="train"    aria-selected="false" aria-controls="panel-train">Train</button>
-  <button id="tab-foods"    role="tab" data-tab="foods"    aria-selected="false" aria-controls="panel-foods">Foods</button>
-  <button id="tab-habits"   role="tab" data-tab="habits"   aria-selected="false" aria-controls="panel-habits">Habits</button>
-  <button id="tab-settings" role="tab" data-tab="settings" aria-selected="false" aria-controls="panel-settings">Setup</button>
+
 </nav>
 
 <!-- ============================ SCANNER ============================ -->
@@ -541,6 +553,7 @@
 <script src="js/foodapi.js"></script>
 <script src="js/scanner.js"></script>
 <script src="js/gym.js"></script>
+<script src="js/progress.js"></script>
 <script src="js/chart.js"></script>
 <script src="js/ui.js"></script>
 </body>

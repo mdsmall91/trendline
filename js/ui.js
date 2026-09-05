@@ -14,7 +14,7 @@
   /* Bumped by hand on each deploy, and shown under Setup → Version.
      Its only job is to let "it still looks old" be answered with a
      number instead of a guess. Keep it in step with CACHE in sw.js. */
-  var BUILD = '2026-09-05.13';
+  var BUILD = '2026-09-05.15';
   var day = WL.todayKey();
   var range = 30;
   var foodFilterText = '';
@@ -82,6 +82,28 @@
       tdee: tdee.tdee, goalRateLbPerWk: st.goalRateLbPerWk,
       profile: profile, floorKcal: st.floorKcal
     });
+    /* A manual target replaces the computed one.
+
+       Before there are two weeks of logging, the target comes from
+       Mifflin-St Jeor times an activity multiplier, and that formula
+       runs high for a lot of people — an activity level chosen
+       optimistically can add several hundred calories on its own. The
+       adaptive estimate fixes this on its own once it has data, but
+       "wait a fortnight" is not an answer to a number you do not
+       believe today.
+
+       The engine keeps running underneath. Clearing the override
+       returns to it, and the measured burn is still shown, so this is
+       a manual override rather than a fork in the logic. */
+    var manual = (typeof st.targetOverride === 'number' && st.targetOverride > 0)
+      ? Math.round(st.targetOverride) : null;
+    if (manual) {
+      target = Object.assign({}, target, {
+        target: manual, manual: true, computed: target.target,
+        actualRate: ((tdee.tdee - manual) * 7) / WL.KCAL_PER_LB
+      });
+    }
+
     var macros = WL.macroTargets({
       targetKcal: target.target, weightLb: basisLb,
       proteinPerLb: st.proteinPerLb, fatPerLb: st.fatPerLb
@@ -205,6 +227,17 @@
      explain is a number you stop trusting in week three. */
   function basisText(D) {
     if (!D.hasWeight) return 'Add a weigh-in to start the adaptive loop.';
+    if (D.target.manual) {
+      var m = 'Target set by hand to ' + fmt(D.target.target) + '. ' +
+        'The formula would have said ' + fmt(D.target.computed) + '. ';
+      m += D.tdee.method === 'adaptive'
+        ? 'Your measured burn is ' + fmt(D.tdee.tdee) + ', so this is about ' +
+          fmt(D.target.actualRate, 2) + ' lb/wk.'
+        : 'Once two weeks of weight and food are logged, the measured number will tell you ' +
+          'whether this is the right one.';
+      if (D.training.credit) m += ' Training added ' + fmt(D.training.credit) + '.';
+      return m;
+    }
     var t = D.tdee, s;
     if (t.method === 'baseline') {
       s = 'Estimated from the formula (' + fmt(t.tdee) + ' cal/day). ' +
@@ -565,6 +598,28 @@
     if (trainView === 'exercises') renderExerciseIndex();
   }
 
+  /* What the progression model says about an exercise, given the
+     prescription in front of you. Returns null when there is nothing
+     worth saying rather than a placeholder — a coach that speaks on
+     every rep is a coach nobody reads. */
+  function adviceFor(exId, pres) {
+    if (!Gym.ready()) return null;
+    var ex = Gym.byId(exId);
+    if (!ex) return null;
+    return Progress.recommend({
+      history: Store.exerciseHistory(exId),
+      pres: pres,
+      loads: Gym.selectableLoads(ex),
+      tracking: ex.tracking_mode,
+      bodyweight: !(ex.equipment || []).length
+    });
+  }
+
+  var ADVICE_LABEL = {
+    increase: 'Go up', add_reps: 'More reps', reduce: 'Back off',
+    hold: 'Repeat', establish: 'First time', progress_variation: 'Harder variation'
+  };
+
   function countDone(w) {
     var rows = Array.isArray(w.sets) ? w.sets : [];
     var structured = rows.filter(function (r) { return r && r.ex; });
@@ -607,7 +662,12 @@
       if (r.ex !== lastEx) {
         var ex = Gym.ready() ? Gym.byId(r.ex) : null;
         var note = ex ? Gym.loadNote(ex) : '';
+        var adv = adviceFor(r.ex, { min: r.targetMin, max: r.targetMax, rir: r.rirTarget });
         html += '<div class="exhead"><b>' + esc(r.name) + '</b>' +
+          (adv ? '<span class="advice ' + esc(adv.action) + '">' +
+             esc(ADVICE_LABEL[adv.action] || adv.action) +
+             (adv.load ? ' \u00b7 ' + fmt(adv.load) + ' lb' : '') + '</span>' +
+             '<small>' + esc(adv.why) + '</small>' : '') +
           (note ? '<small>' + esc(note) + '</small>' : '') + '</div>';
         lastEx = r.ex;
       }
@@ -785,6 +845,20 @@
         return (h.load ? fmt(h.load) + '\u00d7' : '') + fmt(h.reps) +
           (h.rir !== null && h.rir !== undefined ? ' @' + fmt(h.rir) : '');
       }).join(', ') + '</div>';
+    }
+
+    var full = Store.exerciseHistory(e.id);
+    var est = Progress.currentStrength(full);
+    if (est) {
+      var n = Progress.countSessions(full);
+      html += '<div class="hint">Estimated one-rep max: ' + fmt(est) + ' lb, smoothed across ' +
+        n + ' session' + (n === 1 ? '' : 's') +
+        '. One set is mostly noise, so this is a trend rather than a reading.</div>';
+    }
+    var advice = adviceFor(e.id, { min: 8, max: 12, rir: 3 });
+    if (advice && advice.action !== 'establish') {
+      html += '<div class="note plain">Next time, at 8-12 reps and 3 RIR: ' +
+        esc(advice.why) + ' (' + esc(advice.confidence) + ' confidence)</div>';
     }
 
     $('exdBody').innerHTML = html;
@@ -1155,6 +1229,7 @@
     setIf('stRate', s.goalRateLbPerWk);
     setIf('stProtein', s.proteinPerLb);
     setIf('stFat', s.fatPerLb);
+    setIf('stTargetOverride', (typeof s.targetOverride === 'number') ? s.targetOverride : '');
     $('stAlpha').value = s.alpha;
     $('alphaVal').textContent = Number(s.alpha).toFixed(2);
 
@@ -1253,22 +1328,63 @@
     return isFinite(v) ? v : null;
   }
 
-  Array.prototype.forEach.call(document.querySelectorAll('.tabs button'), function (b) {
-    b.addEventListener('click', function () {
-      Array.prototype.forEach.call(document.querySelectorAll('.tabs button'), function (x) {
-        x.setAttribute('aria-selected', String(x === b));
-      });
-      Array.prototype.forEach.call(document.querySelectorAll('.panel'), function (p) {
-        p.classList.toggle('active', p.id === 'panel-' + b.dataset.tab);
-      });
-      window.scrollTo(0, 0);
+  /* Navigation.
+
+     The bottom bar holds the three things done daily; Foods, Habits and
+     Setup moved behind the header menu. Six tabs across a phone gave
+     each one about sixty pixels, and the two that were hardest to hit
+     were the ones opened least — a bad trade in both directions.
+
+     One function drives everything, because the same destination is now
+     reachable from two places and having each set its own highlighting
+     is how they drift apart. */
+  function goTab(name) {
+    Array.prototype.forEach.call(document.querySelectorAll('.tabs button'), function (x) {
+      x.setAttribute('aria-selected', String(x.dataset.tab === name));
     });
+    Array.prototype.forEach.call(document.querySelectorAll('#menu button'), function (x) {
+      x.setAttribute('aria-current', x.dataset.tab === name ? 'page' : 'false');
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('.panel'), function (p) {
+      p.classList.toggle('active', p.id === 'panel-' + name);
+    });
+    closeMenu();
+    window.scrollTo(0, 0);
+  }
+
+  function openMenu() {
+    $('menu').hidden = false;
+    $('menuBtn').setAttribute('aria-expanded', 'true');
+  }
+  function closeMenu() {
+    $('menu').hidden = true;
+    $('menuBtn').setAttribute('aria-expanded', 'false');
+  }
+
+  $('menuBtn').addEventListener('click', function (ev) {
+    ev.stopPropagation();
+    if ($('menu').hidden) openMenu(); else closeMenu();
   });
 
-  function goTab(name) {
-    var b = document.querySelector('.tabs button[data-tab="' + name + '"]');
-    if (b) b.click();
-  }
+  $('menu').addEventListener('click', function (ev) {
+    var b = ev.target.closest('[data-tab]');
+    if (b) goTab(b.dataset.tab);
+  });
+
+  /* Tapping anywhere else closes it. An open menu covering the screen
+     with no obvious way out is the thing people complain about. */
+  document.addEventListener('click', function (ev) {
+    if ($('menu').hidden) return;
+    if (ev.target.closest('#menu') || ev.target.closest('#menuBtn')) return;
+    closeMenu();
+  });
+  document.addEventListener('keydown', function (ev) {
+    if (ev.key === 'Escape' && !$('menu').hidden) closeMenu();
+  });
+
+  Array.prototype.forEach.call(document.querySelectorAll('.tabs button'), function (b) {
+    b.addEventListener('click', function () { goTab(b.dataset.tab); });
+  });
 
   $('prevDay').addEventListener('click', function () { day = WL.addDays(day, -1); render(); });
   $('nextDay').addEventListener('click', function () {
@@ -1439,7 +1555,13 @@
 
     var ex = Gym.ready() ? Gym.byId(row.ex) : null;
     var hist = Store.exerciseHistory(row.ex, 1)[0];
-    var suggested = row.load !== null ? row.load : (hist ? hist.load : null);
+    var adv = adviceFor(row.ex, { min: row.targetMin, max: row.targetMax, rir: row.rirTarget });
+    /* Already-entered value first, then what the model recommends, then
+       simply what was done last time. The recommendation is a default,
+       never a lock: it arrives pre-filled and fully overwritable,
+       because the person under the bar knows things the model does not. */
+    var suggested = row.load !== null ? row.load
+      : (adv && adv.load ? adv.load : (hist ? hist.load : null));
 
     var loadStr = prompt(row.name + ' \u2014 set ' + row.idx + '\nLoad in lb' +
       (ex && Gym.loadNote(ex) ? '\n(' + Gym.loadNote(ex) + ')' : '') +
@@ -1965,6 +2087,7 @@
   bindSetting('stRate', 'goalRateLbPerWk', function (el) { var v = num(el); return v === null ? 0 : v; });
   bindSetting('stProtein', 'proteinPerLb', function (el) { var v = num(el); return v === null ? 0.8 : v; });
   bindSetting('stFat', 'fatPerLb', function (el) { var v = num(el); return v === null ? 0.35 : v; });
+  bindSetting('stTargetOverride', 'targetOverride', function (el) { return num(el); });
   $('stAlpha').addEventListener('input', function () {
     $('alphaVal').textContent = parseFloat($('stAlpha').value).toFixed(2);
   });

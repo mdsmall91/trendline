@@ -442,3 +442,36 @@ code {
    not admiring the ones already done. */
 .setrow.done .prescribed { color: var(--text-faint); }
 .setrow.done .actual { color: var(--accent); }
+
+/* The header menu. Foods, Habits and Setup live here rather than in the
+   bottom bar: six tabs across a phone gave each about sixty pixels, and
+   the two hardest to hit were the two opened least often. */
+.menu {
+  position: sticky; top: 52px; z-index: 20;
+  background: var(--paper); border-bottom: var(--hairline);
+  box-shadow: 0 8px 24px oklch(0 0 0 / 0.10);
+}
+.menu button {
+  display: block; width: 100%; text-align: left;
+  background: none; border: 0; border-bottom: var(--hairline);
+  padding: var(--s-4) var(--s-4); font: inherit; font-size: 0.9375rem;
+  color: var(--text); cursor: pointer;
+}
+.menu button:last-child { border-bottom: 0; }
+.menu button:hover { background: var(--surface); }
+.menu button[aria-current="page"] { color: var(--accent); font-weight: 500; }
+
+/* What the progression model says, on the exercise it says it about.
+   Colour carries the direction so it reads at a glance mid-set; the
+   sentence underneath carries the reason, for when you want it. */
+.advice {
+  display: inline-block; margin-left: var(--s-2);
+  font-size: 0.6875rem; letter-spacing: 0.04em; text-transform: uppercase;
+  padding: 2px 8px; border-radius: 999px;
+  background: var(--surface-2); color: var(--text-muted);
+}
+.advice.increase { background: var(--accent-soft); color: var(--accent); }
+.advice.reduce   { background: var(--warn-soft);   color: var(--warn); }
+.advice.add_reps, .advice.progress_variation {
+  background: var(--accent-soft); color: var(--accent);
+}

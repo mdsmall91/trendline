@@ -56,6 +56,9 @@ var Store = (function () {
       sex: 'unspecified', age: 40, heightIn: 70, activity: 'moderate',
       goalWeight: null, goalRateLbPerWk: 1,
       proteinPerLb: 0.8, fatPerLb: 0.35, alpha: 0.15, floorKcal: 1200,
+      /* Overrides the computed target when set. The formula runs
+         underneath regardless, so clearing this returns to it. */
+      targetOverride: null,
       updatedAt: now(), dirty: false
     };
   }
