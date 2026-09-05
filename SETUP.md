@@ -139,15 +139,25 @@ Barcode scanning needs nothing — it uses Open Food Facts, which has no key
 and no account. Searching foods by *name* uses the USDA database, which
 wants a free key.
 
-[fdc.nal.usda.gov/api-key-signup.html](https://fdc.nal.usda.gov/api-key-signup.html)
-— email address, no card, key arrives instantly. Paste it into
-**Setup → Food lookup** and press **Test it**.
+**This is already done** — a key is committed in `config.js`, so every
+device picks it up and there is nothing to type. The rest of this section
+is only for replacing it.
 
-You can also put it in `config.js` as `USDA_API_KEY` so every device picks
-it up. Weigh that against the repo being public: unlike the Supabase anon
-key, which is protected by Row Level Security, a USDA key in a public repo
-is a rate limit strangers can spend. On a private repo, commit it. On a
-public one, the per-device field is the safer place.
+[fdc.nal.usda.gov/api-key-signup.html](https://fdc.nal.usda.gov/api-key-signup.html)
+— email address, no card, key arrives instantly. Either replace the
+`USDA_API_KEY` line in `config.js` and push, or paste it into
+**Setup → Food lookup** for this device only and press **Test it**. A key
+in `config.js` wins over one entered on a device, so there is one source
+of truth.
+
+On committing it to a public repo: a USDA key is a rate-limit identifier,
+not a credential. It grants nothing but queries against a public database,
+and the allowance is 3,600 an hour against a personal use of maybe thirty
+a day. The worst case is that someone burns an hour's quota and search is
+briefly unavailable — nothing is exposed and nothing is billed. That is a
+different calculation from the Supabase key, which is safe for a different
+reason (Row Level Security), and from a secret, which would not be safe
+here at all.
 
 Skip this entirely and everything else still works — you just type macros
 by hand for foods without a barcode, which is what the app did before.
