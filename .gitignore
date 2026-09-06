@@ -1,3 +1,8 @@
 node_modules/
 .DS_Store
 .claude/
+
+# Supabase CLI scratch state — the linked project ref and a version
+# stamp it rewrites on every command. Nothing secret, nothing worth
+# a diff.
+supabase/.temp/
