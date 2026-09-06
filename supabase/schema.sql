@@ -145,6 +145,12 @@ create table if not exists public.plans (
   primary key (user_id, id)
 );
 
+-- The amount as it was typed, next to the servings it became. Added
+-- after the fact, so these are ALTERs rather than columns in the create
+-- above — running this file on an existing project has to stay safe.
+alter table public.entries add column if not exists amount double precision;
+alter table public.entries add column if not exists unit   text;
+
 -- ---------- pull cursor ----------
 -- Every read is "give me what changed since X", so this index is the
 -- one that matters.

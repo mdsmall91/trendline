@@ -14,7 +14,7 @@
   /* Bumped by hand on each deploy, and shown under Setup → Version.
      Its only job is to let "it still looks old" be answered with a
      number instead of a guess. Keep it in step with CACHE in sw.js. */
-  var BUILD = '2026-09-06.18';
+  var BUILD = '2026-09-06.19';
   var day = WL.todayKey();
   var range = 30;
   var foodFilterText = '';
@@ -196,7 +196,13 @@
       log.innerHTML = lines.map(function (line) {
         var t = WL.lineTotals(line);
         var sub = [];
-        if (line.qty && line.qty !== 1) sub.push('x' + line.qty);
+        /* What was typed, not what it became. "2 oz" is checkable at a
+           glance; "x0.567" is a number you have to reconstruct. */
+        if (line.amount && line.unit && line.unit !== 'serving') {
+          sub.push(Units.describe(line.amount, line.unit));
+        } else if (line.qty && line.qty !== 1) {
+          sub.push('x' + fmt(line.qty, 2));
+        }
         if (t.protein || t.carbs || t.fat) {
           sub.push(fmt(t.protein) + 'p ' + fmt(t.carbs) + 'c ' + fmt(t.fat) + 'f');
         }
@@ -1055,7 +1061,7 @@
       feSet('feGrams', rec.servingGrams || 100);
       feSet('feQtyG', 1);
     } else {
-      feSet('feQty', num($('foodQty')) || 1);
+      feSet('feQty', Units.parseAmount($('foodAmount').value) || 1);
     }
     feSet('feKcal', rec.kcal); feSet('feP', rec.protein);
     feSet('feC', rec.carbs); feSet('feF', rec.fat);
@@ -1165,10 +1171,16 @@
 
     Store.addEntry(day, {
       foodId: f.id, name: f.name, qty: qty,
+      /* The amount editor works in servings or in grams, and says which
+         in its own fields; recording it keeps the day's list reading
+         the same way as everything else logged. */
+      amount: grams ? grams : qty, unit: grams ? 'g' : 'serving',
       kcal: f.kcal, protein: f.protein, carbs: f.carbs, fat: f.fat
     });
     $('foodPick').value = '';
-    $('foodQty').value = 1;
+    $('foodAmount').value = '1';
+    unitChoice = 'serving';
+    refreshUnits();
     closeFoodEdit();
     closeLookup();
     render();
@@ -1526,28 +1538,89 @@
     if (ev.key === 'Enter') { ev.preventDefault(); $('weightInput').blur(); saveWeight(); }
   });
 
-  /* food */
+  /* ---------------------------------------------------------------
+     FOOD ENTRY
+
+     One place to type, not two. The name box, an amount, and a unit
+     drawn from what the food actually states about itself.
+
+     The unit list is rebuilt whenever the name changes, because it is
+     a property of the food and not of the app: a yoghurt sold by the
+     cup can be logged in tablespoons, a chicken breast sold by weight
+     cannot, and nothing in the world converts between them without a
+     density this app was never told. See js/units.js.
+     --------------------------------------------------------------- */
+
+  var unitChoice = 'serving';
+
+  function currentFood() {
+    return Store.findFoodByName($('foodPick').value.trim());
+  }
+
+  function refreshUnits() {
+    var f = currentFood();
+    var opts = Units.unitsFor(f || {});
+    /* Keep the chosen unit if it survives the change of food. Resetting
+       to servings every keystroke would fight anyone typing a name
+       after picking a unit. */
+    if (opts.indexOf(unitChoice) < 0) unitChoice = 'serving';
+    $('foodUnit').innerHTML = opts.map(function (u) {
+      return '<option value="' + u + '"' + (u === unitChoice ? ' selected' : '') + '>' +
+        esc(Units.label(u)) + '</option>';
+    }).join('');
+
+    /* Say why the list is short, rather than leaving it looking broken.
+       "This food only knows servings" is a fact about the food. */
+    var note = '';
+    if (f && opts.length === 1) {
+      note = f.name + ' is stored as "' + (f.serving || '1 serving') +
+        '", which gives no weight or volume to convert from — so servings only. ' +
+        'Edit it in Foods to add one.';
+    }
+    $('unitNote').textContent = note;
+  }
+
   function addFoodLine() {
     var name = $('foodPick').value.trim();
-    if (!name) return;
-    var qty = num($('foodQty'));
-    if (qty === null || qty <= 0) qty = 1;
+    if (!name) { $('foodPick').focus(); return; }
+
     var f = Store.findFoodByName(name);
     if (!f) {
       $('inlineName').textContent = name;
       $('inlineNew').hidden = false;
+      ['inKcal', 'inP', 'inC', 'inF'].forEach(function (id) { $(id).value = ''; });
       $('inKcal').focus();
       return;
     }
+
+    var unit = $('foodUnit').value || 'serving';
+    var amount = Units.parseAmount($('foodAmount').value);
+    if (amount === null || amount <= 0) { $('foodAmount').focus(); return; }
+
+    var qty = Units.toServings(amount, unit, f);
+    if (qty === null) {
+      /* Should be unreachable, since the list only offers convertible
+         units. Unreachable is not the same as impossible. */
+      $('unitNote').textContent = 'That food cannot be measured in ' + Units.label(unit) + '.';
+      return;
+    }
+
     Store.addEntry(day, {
       foodId: f.id, name: f.name, qty: qty,
+      amount: amount, unit: unit,
       kcal: f.kcal, protein: f.protein, carbs: f.carbs, fat: f.fat
     });
-    $('foodPick').value = ''; $('foodQty').value = 1;
+    $('foodPick').value = ''; $('foodAmount').value = '1';
+    unitChoice = 'serving';
+    refreshUnits();
     $('inlineNew').hidden = true;
+    closeLookup();
     render();
   }
   $('addFoodLine').addEventListener('click', addFoodLine);
+  $('foodUnit').addEventListener('change', function () {
+    unitChoice = $('foodUnit').value;
+  });
   $('foodPick').addEventListener('keydown', function (ev) {
     if (ev.key === 'Enter') { ev.preventDefault(); addFoodLine(); }
   });
@@ -1566,6 +1639,7 @@
      browsers, where it works fine and costs nothing. */
   $('foodPick').addEventListener('input', function () {
     var q = $('foodPick').value.trim();
+    refreshUnits();
     if (q.length < 2) {
       /* Only close a list we opened ourselves. Closing one full of USDA
          results because a letter was deleted would be maddening. */
@@ -1577,44 +1651,66 @@
       if (lookup.source === 'typing') closeLookup();
       return;
     }
+    refreshUnits();
     setLookup('From your library — tap one to log it. "Look it up" searches USDA.',
       mine, 'typing');
   });
 
-  $('inSave').addEventListener('click', function () {
-    var f = Store.addFood({
-      name: $('inlineName').textContent, serving: '',
-      kcal: num($('inKcal')), protein: num($('inP')), carbs: num($('inC')), fat: num($('inF'))
-    });
-    var qty = num($('foodQty')); if (qty === null || qty <= 0) qty = 1;
-    Store.addEntry(day, {
-      foodId: f.id, name: f.name, qty: qty,
-      kcal: f.kcal, protein: f.protein, carbs: f.carbs, fat: f.fat
-    });
+  /* Two ways out of the new-food panel, because there are two things
+     people mean by "I ate this".
+
+       Save & log it   it joins the library and autocompletes forever
+       Log once        a restaurant plate, someone's birthday cake:
+                       the calories count today and nothing is kept
+
+     The second is what the old quick-add box did, in the one place
+     where the question is already being asked. */
+  function finishNew(save) {
+    var name = $('inlineName').textContent;
+    var vals = {
+      kcal: num($('inKcal')), protein: num($('inP')),
+      carbs: num($('inC')), fat: num($('inF'))
+    };
+    if (vals.kcal === null && vals.protein === null && vals.carbs === null && vals.fat === null) {
+      $('inKcal').focus();
+      return;
+    }
+    var amount = Units.parseAmount($('foodAmount').value);
+    if (amount === null || amount <= 0) amount = 1;
+
+    if (save) {
+      var f = Store.addFood({
+        name: name, serving: '',
+        kcal: vals.kcal, protein: vals.protein, carbs: vals.carbs, fat: vals.fat
+      });
+      Store.addEntry(day, {
+        foodId: f.id, name: f.name, qty: amount, amount: amount, unit: 'serving',
+        kcal: f.kcal, protein: f.protein, carbs: f.carbs, fat: f.fat
+      });
+    } else {
+      /* No foodId: nothing to point at, because nothing was kept. */
+      Store.addEntry(day, {
+        name: name, qty: amount, amount: amount, unit: 'serving',
+        kcal: vals.kcal, protein: vals.protein, carbs: vals.carbs, fat: vals.fat
+      });
+    }
+
     ['inKcal', 'inP', 'inC', 'inF'].forEach(function (id) { $(id).value = ''; });
     $('inlineNew').hidden = true;
-    $('foodPick').value = ''; $('foodQty').value = 1;
-    render();
-  });
-  $('inCancel').addEventListener('click', function () { $('inlineNew').hidden = true; });
-
-  function quickAdd() {
-    var k = num($('quickKcal'));
-    if (k === null || k <= 0) { $('quickKcal').focus(); return; }
-    /* Falls back to whatever is in the food box above, because typing a
-       name there and then reaching for quick add is a normal thing to
-       do, and re-typing it would be silly. Only then to "Quick add". */
-    var name = $('quickName').value.trim() || $('foodPick').value.trim() || 'Quick add';
-    Store.addEntry(day, { name: name, qty: 1, kcal: k });
-    $('quickName').value = ''; $('quickKcal').value = '';
+    $('foodPick').value = ''; $('foodAmount').value = '1';
+    unitChoice = 'serving';
+    refreshUnits();
+    closeLookup();
     render();
   }
-  $('addQuick').addEventListener('click', quickAdd);
-  ['quickKcal', 'quickName'].forEach(function (id) {
-    $(id).addEventListener('keydown', function (ev) {
-      if (ev.key === 'Enter') { ev.preventDefault(); quickAdd(); }
-    });
+
+  $('inSave').addEventListener('click', function () { finishNew(true); });
+  $('inOnce').addEventListener('click', function () { finishNew(false); });
+  $('inCancel').addEventListener('click', function () { $('inlineNew').hidden = true; });
+  $('inlineNew').addEventListener('keydown', function (ev) {
+    if (ev.key === 'Enter') { ev.preventDefault(); finishNew(true); }
   });
+
 
   $('foodLog').addEventListener('click', function (ev) {
     var rm = ev.target.closest('[data-rm]');
@@ -2663,21 +2759,70 @@
     alert('Could not save — this browser\'s storage is full or blocked. Export your data before doing anything else.');
   };
 
-  /* Roll the view over if the app is left open past midnight, and sync
-     when it comes back to the foreground. */
-  setInterval(function () {
+  /* ---------------------------------------------------------------
+     MIDNIGHT
+
+     A phone app is almost never closed; it is backgrounded. So the
+     view can be hours or days older than the clock, and the failure
+     mode is quiet and expensive: breakfast logged into yesterday,
+     found a week later when two days look wrong and neither can be
+     trusted.
+
+     anchorToday is what the app last believed today to be. Comparing
+     against it — rather than against the day on screen — is what makes
+     this safe in both directions:
+
+       sitting on today, date changes    move forward with it
+       browsing an earlier day           leave it alone, silently
+
+     Without that distinction, rolling over would yank you off the
+     Tuesday you deliberately opened.
+
+     The old version checked for a gap of exactly one day, which meant
+     a phone left alone over a weekend never rolled over at all. Any
+     gap counts now.
+     --------------------------------------------------------------- */
+
+  var anchorToday = WL.todayKey();
+
+  function checkDayRollover() {
     var t = WL.todayKey();
-    if (day !== t && document.visibilityState === 'visible' && WL.daysBetween(day, t) === 1) {
-      day = t; render();
-    }
-  }, 60000);
+    if (t === anchorToday) return;
+    var wasOnToday = (day === anchorToday);
+    anchorToday = t;
+    if (wasOnToday) day = t;
+    /* Re-render either way: even when the view stays put, "next day"
+       has a new bound and the date label a new meaning. */
+    render();
+  }
+
+  /* Every thirty seconds while visible. Backgrounded pages have their
+     timers throttled or stopped outright, which is exactly why this is
+     not the only check. */
+  setInterval(function () {
+    if (document.visibilityState === 'visible') checkDayRollover();
+  }, 30000);
 
   document.addEventListener('visibilitychange', function () {
-    if (document.visibilityState === 'visible') { doSync('foreground'); return; }
+    if (document.visibilityState === 'visible') {
+      /* Before the sync, not after. Coming back to the app in the
+         morning, the date has to be right in the first frame you see —
+         waiting on a network round trip leaves a window where the
+         obvious thing to do is log breakfast into yesterday. */
+      checkDayRollover();
+      doSync('foreground');
+      return;
+    }
     /* Leaving the camera running in the background keeps the indicator
        light on and, on iOS, comes back as a black frame. */
     if (Scanner.running()) closeScanner();
   });
+
+  /* Belt and braces for iOS, where a PWA resumed from the background
+     often restores from the back/forward cache and fires pageshow
+     rather than visibilitychange. */
+  window.addEventListener('pageshow', checkDayRollover);
+  window.addEventListener('focus', checkDayRollover);
   window.addEventListener('online', function () { renderSyncPill(); doSync('online'); });
   window.addEventListener('offline', renderSyncPill);
 
@@ -2733,5 +2878,6 @@
   }
 
   render();
+  refreshUnits();
   doSync('startup');
 })();

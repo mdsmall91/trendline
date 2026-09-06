@@ -188,6 +188,21 @@ are the remainder after protein and calories are settled — they land where
 they land, and colouring a day red for exceeding a number the app itself
 derived would be inventing a failure.
 
+**3c. One place to log, in the unit the food is sold in.** Type a name,
+an amount, and a unit. The unit list is built per food from what that
+food states about itself: something sold by weight offers grams and
+ounces, something measured in cups offers cups, tablespoons and
+teaspoons, and a cereal bar offers servings and says why.
+
+Cups never convert to grams. A cup of flour and a cup of honey differ by
+a factor of two and a half, so a conversion would be inventing a
+density. The dropdown is short when the food is vague, which is the
+honest version of a dropdown that is always full and sometimes wrong.
+
+The day's list shows what you typed — "4 oz" — rather than the servings
+it worked out to. `x0.567` is the same fact and a different thing: you
+cannot check a number you do not recognise.
+
 **4. Habits.** Daily checkboxes with streaks and a 30-day grid. Streaks
 tolerate an unlogged today, because a streak that breaks at 00:01 every
 morning trains you to stop looking at it.
@@ -293,6 +308,8 @@ js/sync.js              merge logic + Supabase REST/auth over plain fetch
 js/foodapi.js           Open Food Facts + USDA normalizers and lookups
 js/recipe.js            reads schema.org Recipe nutrition out of a page's
                         structured data. Pure; the fetching is an Edge Function
+js/units.js             which units a food can honestly be measured in, and
+                        the conversions. Refuses what it cannot justify.
 js/scanner.js           camera barcode scanning, wrapping the vendored lib
 js/gym.js               exercise catalog: search, substitution, selectable loads
 js/chart.js             hand-rolled SVG. No charting library.
@@ -314,7 +331,7 @@ supabase/functions/     the only two things a browser may not do:
 SETUP.md                Supabase walkthrough
 STEPS-SHORTCUT.md       Garmin steps into the log, by hand-built Shortcut
 HEALTH-EXPORT.md        the same thing, via Health Auto Export
-tests/                  567 assertions
+tests/                  630 assertions
 ```
 
 ## Tests
@@ -326,6 +343,7 @@ node tests/food-tests.js     #  93 — food lookup normalizers and library ranki
 node tests/gym-tests.js      #  42 — catalog search, substitution, real loads
 node tests/progress-tests.js #  77 — e1RM, RIR, load selection, the rules
 node tests/recipe-tests.js   # 100 — recipe reading, against four real pages
+node tests/units-tests.js    #  63 — unit conversion, and what it refuses
 ```
 
 Or open any of the `tests/*.html` pages in a browser, which is the only

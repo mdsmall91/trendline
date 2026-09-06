@@ -79,18 +79,23 @@
          came to this card to use had been pushed a screen and a half
          down by the record of having used it. -->
     <div>
+      <label class="field" style="margin:0 0 var(--s-2)">
+        <span class="sr">Food</span>
+        <input type="text" id="foodPick" list="foodList" placeholder="What did you eat?" autocomplete="off">
+        <datalist id="foodList"></datalist>
+      </label>
       <div class="row">
-        <label class="field" style="margin:0">
-          <span class="sr">Food</span>
-          <input type="text" id="foodPick" list="foodList" placeholder="Search your foods, or type a name" autocomplete="off">
-          <datalist id="foodList"></datalist>
+        <label class="field grow-0" style="margin:0;width:92px">
+          <span class="sr">How much</span>
+          <input type="text" id="foodAmount" inputmode="decimal" value="1" placeholder="1">
         </label>
-        <label class="field grow-0" style="margin:0;width:76px">
-          <span class="sr">Servings</span>
-          <input type="number" id="foodQty" step="0.25" min="0" value="1" inputmode="decimal">
+        <label class="field" style="margin:0">
+          <span class="sr">Unit</span>
+          <select id="foodUnit"></select>
         </label>
         <button class="btn primary grow-0" id="addFoodLine">Add</button>
       </div>
+      <div class="hint" id="unitNote"></div>
       <div class="row" style="margin-top:var(--s-2)">
         <button class="btn grow-0" id="scanBarcode">Scan barcode</button>
         <button class="btn" id="searchOnline">Look it up</button>
@@ -127,19 +132,12 @@
            a restaurant plate, someone's birthday cake. It needs a name,
            because "Quick add · 650" tells you nothing a week later when
            you are trying to work out where a day went. -->
-      <div class="row" style="margin-top:var(--s-2)">
-        <label class="field" style="margin:0">
-          <span class="sr">What it was</span>
-          <input type="text" id="quickName" autocomplete="off" placeholder="Quick add — what was it?">
-        </label>
-        <label class="field grow-0" style="margin:0;width:96px">
-          <span class="sr">Calories</span>
-          <input type="number" id="quickKcal" inputmode="numeric" placeholder="cal">
-        </label>
-        <button class="btn grow-0" id="addQuick">Add</button>
-      </div>
+      <!-- One panel for anything not already in the library. It is also
+           where the old "quick add" lives now: calories alone, logged
+           once, nothing saved. Two boxes in two places for the same
+           act was the confusing part. -->
       <div class="card" id="inlineNew" hidden style="margin:var(--s-3) 0 0;background:var(--paper)">
-        <h2>New food &mdash; <span id="inlineName"></span></h2>
+        <h2>New &mdash; <span id="inlineName"></span></h2>
         <div class="row">
           <label class="field"><span>Cal</span><input type="number" id="inKcal" inputmode="numeric"></label>
           <label class="field"><span>P (g)</span><input type="number" id="inP" inputmode="decimal"></label>
@@ -148,6 +146,7 @@
         </div>
         <div class="row">
           <button class="btn primary" id="inSave">Save &amp; log it</button>
+          <button class="btn" id="inOnce">Log once</button>
           <button class="btn grow-0" id="inCancel">Cancel</button>
         </div>
       </div>
@@ -629,6 +628,7 @@
 <script src="js/core.js"></script>
 <script src="js/store.js"></script>
 <script src="js/sync.js"></script>
+<script src="js/units.js"></script>
 <script src="js/foodapi.js"></script>
 <script src="js/recipe.js"></script>
 <script src="js/scanner.js"></script>

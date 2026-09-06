@@ -391,6 +391,13 @@ var Store = (function () {
       id: id, date: date, foodId: line.foodId || null,
       name: line.name || 'Quick add',
       qty: typeof line.qty === 'number' ? line.qty : 1,
+      /* What was actually typed, alongside the servings it worked out
+         to. Logging "2 oz" and reading back "x0.57" a week later is
+         technically the same fact and practically a different one — you
+         cannot check a number you do not recognise. qty stays the
+         canonical amount; these two are how it was said. */
+      amount: typeof line.amount === 'number' ? line.amount : null,
+      unit: line.unit || null,
       kcal: line.kcal, protein: line.protein, carbs: line.carbs, fat: line.fat,
       deletedAt: null
     });
