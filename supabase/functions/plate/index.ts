@@ -164,7 +164,11 @@ Deno.serve(async (req: Request) => {
 
   if (!await isSignedIn(req)) return json({ error: 'Sign in to Trendline first.' }, 401);
 
-  const apiKey = Deno.env.get('ANTHROPIC_API_KEY');
+  /* Trimmed. Pasting a key into a web form carries a trailing newline
+     more often than not, and Anthropic rejects the whole header when it
+     does — which surfaces as "your key is wrong" about a key that is
+     entirely correct. */
+  const apiKey = (Deno.env.get('ANTHROPIC_API_KEY') ?? '').trim();
   if (!apiKey) {
     return json({
       error: 'No Anthropic key is set on this project. See supabase/functions/README.md.',
@@ -214,14 +218,33 @@ Deno.serve(async (req: Request) => {
 
     if (!res.ok) {
       const detail = await res.text().catch(() => '');
-      // The key being wrong or out of credit are the two failures worth
-      // naming, because they are the two the person can actually fix.
+      /* Anthropic's own message is nearly always the useful one — it
+         distinguishes an invalid key from one belonging to an org
+         without credit from a model this account cannot reach. Passing
+         it through beats a friendly sentence that hides the answer. */
+      let said = '';
+      try {
+        const parsed = JSON.parse(detail);
+        said = parsed?.error?.message || '';
+      } catch { /* not JSON */ }
+
       const msg = res.status === 401 || res.status === 403
-        ? 'The Anthropic key was rejected. Check it in the Supabase secrets.'
+        ? 'Anthropic rejected the key'
         : res.status === 429
-          ? 'Anthropic is rate limiting or the account is out of credit.'
-          : `The reader answered ${res.status}.`;
-      return json({ error: msg, detail: detail.slice(0, 300) }, 502);
+          ? 'Anthropic is rate limiting, or the account is out of credit'
+          : `Anthropic answered ${res.status}`;
+      return json({
+        error: msg + (said ? ': ' + said : '.'),
+        detail: detail.slice(0, 300),
+        /* Enough to tell a mangled paste from a wrong key without ever
+           revealing the key: a valid one is ~108 chars and starts
+           sk-ant-. */
+        keyShape: {
+          length: apiKey.length,
+          prefix: apiKey.slice(0, 7),
+          hasWhitespace: /\s/.test(apiKey),
+        },
+      }, 502);
     }
 
     const data = await res.json();

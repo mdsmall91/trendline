@@ -214,7 +214,19 @@ var Plate = (function () {
           'See supabase/functions/README.md.');
       }
       return res.json().catch(function () { return {}; }).then(function (body) {
-        if (!res.ok) throw new Error(body.error || ('The photo could not be read (' + res.status + ').'));
+        if (!res.ok) {
+          var msg = body.error || ('The photo could not be read (' + res.status + ').');
+          /* When the key is the problem, say what shape the stored key
+             has. It never reveals the key, and it separates the two
+             cases that look identical from outside: a wrong key, and a
+             right key pasted with a stray newline. */
+          var k = body.keyShape;
+          if (k) {
+            msg += ' (stored key: ' + k.length + ' characters, starts "' + k.prefix + '"' +
+              (k.hasWhitespace ? ', contains whitespace' : '') + ')';
+          }
+          throw new Error(msg);
+        }
         return normalize(body);
       });
     });
