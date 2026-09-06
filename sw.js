@@ -24,7 +24,7 @@
    no reason to re-fetch them on every launch.
    ============================================================= */
 
-var CACHE = 'trendline-v23';
+var CACHE = 'trendline-v24';
 
 var SHELL = [
   './', './index.html', './manifest.webmanifest', './icon.svg',

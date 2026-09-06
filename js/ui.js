@@ -14,7 +14,7 @@
   /* Bumped by hand on each deploy, and shown under Setup → Version.
      Its only job is to let "it still looks old" be answered with a
      number instead of a guess. Keep it in step with CACHE in sw.js. */
-  var BUILD = '2026-09-06.25';
+  var BUILD = '2026-09-06.26';
   var day = WL.todayKey();
   var range = 30;
   var foodFilterText = '';
@@ -2600,10 +2600,26 @@
       } else if (after) {
         note.textContent = 'Still ' + fmt(after.steps) + ' steps — nothing newer has arrived yet.';
       } else {
-        note.textContent = name
-          ? 'Nothing arrived. If the Shortcut ran, give it a few seconds and try again.'
-          : 'No steps for today yet. Health Auto Export sends them; see HEALTH-EXPORT.md.' +
-            ' You can also name a Shortcut in Setup to fetch on demand.';
+        /* "Nothing for today" and "nothing ever" are different problems
+           with different fixes, and the app can tell them apart: if
+           yesterday has steps, the pipe works and the export window is
+           the thing that is wrong. That is a real setting on the phone
+           with a real name, so say it rather than shrugging. */
+        var recent = null;
+        for (var i = 1; i <= 10 && !recent; i++) {
+          var r = Store.stepsOn(WL.addDays(day, -i));
+          if (r && r.steps) recent = { date: WL.addDays(day, -i), steps: r.steps, back: i };
+        }
+        if (recent) {
+          note.textContent = 'Nothing for today, but ' + fmt(recent.steps) + ' steps arrived for ' +
+            recent.date + '. The pipe works; the export window is stopping short of today. ' +
+            'In Health Auto Export set Date Range to "Default" — "Previous 7 Days" means ' +
+            'the seven days BEFORE today and leaves today out.';
+        } else {
+          note.textContent = name
+            ? 'Nothing arrived. If the Shortcut ran, give it a few seconds and try again.'
+            : 'No steps have ever arrived. Health Auto Export sends them; see HEALTH-EXPORT.md.';
+        }
       }
     }).catch(function (e) {
       $('pullSteps').disabled = false;

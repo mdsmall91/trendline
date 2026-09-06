@@ -89,7 +89,11 @@ Open Trendline, pull it fresh, and the days are in the log.
 
 ## Why "Default" and not "Previous 7 Days"
 
-This one is counter-intuitive, and I had it wrong at first.
+This one is counter-intuitive, I had it wrong at first, and it has already bitten
+once: seven rows in the database ending *yesterday*, with the ingest token showing
+it had run *today*. The pipe was fine; the window was stopping short of today.
+
+If steps look stuck a day behind, this is why, and this is the fix.
 
 Read their definitions side by side:
 
