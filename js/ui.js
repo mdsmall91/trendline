@@ -14,7 +14,7 @@
   /* Bumped by hand on each deploy, and shown under Setup → Version.
      Its only job is to let "it still looks old" be answered with a
      number instead of a guess. Keep it in step with CACHE in sw.js. */
-  var BUILD = '2026-09-06.23';
+  var BUILD = '2026-09-06.24';
   var day = WL.todayKey();
   var range = 30;
   var foodFilterText = '';
@@ -348,10 +348,68 @@
     }
 
     renderMacroChart(D, end);
+    renderTrendWater(end);
     renderTrendTraining(D, end);
 
     $('trendFood').hidden = trendView !== 'food';
+    $('trendWater').hidden = trendView !== 'water';
     $('trendTraining').hidden = trendView !== 'training';
+  }
+
+  /* ---------------------------------------------------------------
+     WATER OVER TIME
+
+     A day with no water logged is absent, not zero — the same rule the
+     intake chart and the TDEE estimate use. "Drank nothing" and
+     "did not record it" are different facts, and averaging the second
+     as the first invents a dehydration problem out of a logging habit.
+     --------------------------------------------------------------- */
+
+  function renderTrendWater(end) {
+    var goal = num0(Store.settings().waterGoalOz, 64);
+    var days = [], logged = [], met = 0, streak = 0, best = 0;
+
+    for (var i = 29; i >= 0; i--) {
+      var k = WL.addDays(end, -i);
+      var oz = Store.waterOn(k);
+      days.push({ date: k, kcal: oz });
+      if (oz > 0) {
+        logged.push(oz);
+        if (goal > 0 && oz >= goal) {
+          met++; streak++; if (streak > best) best = streak;
+        } else { streak = 0; }
+      } else { streak = 0; }
+    }
+
+    var mean = logged.length
+      ? logged.reduce(function (a, b) { return a + b; }, 0) / logged.length : 0;
+
+    $('waterTrendStats').innerHTML = [
+      { k: 'Days logged', v: String(logged.length), n: 'of the last 30' },
+      { k: 'Average', v: fmt(mean) + ' oz', n: 'on the days logged' },
+      { k: 'Goal met', v: String(met), n: goal ? 'at ' + fmt(goal) + ' oz' : 'no goal set' },
+      { k: 'Best run', v: String(best), n: best === 1 ? 'day' : 'days in a row' }
+    ].map(function (x) {
+      return '<div class="stat"><div class="k">' + esc(x.k) + '</div><div class="v">' + esc(x.v) +
+        '</div><div class="n">' + esc(x.n) + '</div></div>';
+    }).join('');
+
+    $('waterTrendNote').textContent = !logged.length
+      ? 'Nothing logged yet. The buttons on Today take about a second each.'
+      : (logged.length < 7
+        ? 'Only ' + logged.length + ' day' + (logged.length === 1 ? '' : 's') +
+          ' logged so far, which is too few to read a pattern into.'
+        : 'Averaging ' + fmt(mean) + ' oz on the days you logged, and hitting ' +
+          fmt(goal) + ' on ' + met + ' of them. Days you did not record are left out ' +
+          'rather than counted as nothing.');
+
+    $('waterTrendChart').innerHTML = Chart.intake(days, {
+      target: goal,
+      empty: 'Log some water and the days appear here.'
+    });
+    $('waterTrendSummary').textContent = logged.length
+      ? logged.length + ' of 30 days logged' + (goal ? ' \u00b7 line is the ' + fmt(goal) + ' oz goal' : '')
+      : '';
   }
 
   /* The training half of the Trend page. The Train tab is for logging;

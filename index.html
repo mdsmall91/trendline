@@ -272,6 +272,7 @@
 
   <div class="seg" id="trendSeg" style="margin-bottom:var(--s-4)">
     <button data-trend="food" aria-pressed="true">Food</button>
+    <button data-trend="water" aria-pressed="false">Water</button>
     <button data-trend="training" aria-pressed="false">Training</button>
   </div>
 
@@ -297,6 +298,19 @@
     </div>
     <div class="hint" id="macroSummary"></div>
   </div>
+  </div>
+
+  <div id="trendWater" hidden>
+    <div class="card">
+      <h2>Water</h2>
+      <div class="stats" id="waterTrendStats"></div>
+      <div class="note plain" id="waterTrendNote"></div>
+    </div>
+    <div class="card">
+      <h2>Last 30 days</h2>
+      <div id="waterTrendChart"></div>
+      <div class="hint" id="waterTrendSummary"></div>
+    </div>
   </div>
 
   <div id="trendTraining" hidden>

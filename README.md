@@ -245,6 +245,13 @@ buttons, a slider and a box. The goal lives in Setup and defaults to
 64 oz — the familiar eight-glasses figure, which is a rule of thumb
 rather than a medical target, and the app says so.
 
+The Trend page carries it as its own tab beside Food and Training: a
+30-day chart with the goal drawn on it, the average across logged days,
+and the best run of days that hit it. A day with no water recorded is
+absent rather than zero, the same rule the intake chart uses — averaging
+"did not record" as "drank nothing" invents a dehydration problem out of
+a logging habit.
+
 **4. Habits.** Daily checkboxes with streaks and a 30-day grid. Streaks
 tolerate an unlogged today, because a streak that breaks at 00:01 every
 morning trains you to stop looking at it.
