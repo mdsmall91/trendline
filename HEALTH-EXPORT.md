@@ -3,67 +3,71 @@
 Garmin writes your step count into Apple Health. This gets it from there into
 Trendline without you typing anything.
 
-**What it costs:** Health Auto Export is £5.99/$5.99 a year, or a one-off for
-lifetime. Everything else here is free, and no Apple Developer account is
-involved — that $99 is for shipping apps to the App Store, not for using one.
+**Cost:** Health Auto Export is $5.99/year, or a one-off for lifetime. No Apple
+Developer account is involved — that $99 is for shipping apps to the App Store,
+not for using one.
 
-**What it replaces:** the hand-built Shortcut in `STEPS-SHORTCUT.md`. That route
-still works and still costs nothing. This one is about fifteen minutes shorter
-to set up and rather more reliable, because a maintained app is doing the part
-that used to be twelve Shortcut actions.
+---
+
+## There is nothing to import — and that is the app, not an omission
+
+Health Auto Export has no way to import an automation. No config file, no QR
+code, no URL scheme, no duplicate button. The only transfer mechanism is its own
+iCloud backup, which restores *your* automations onto *your* next phone; it
+cannot take a file written by someone else.
+
+So this page is the next best thing: every field of the form, with the value to
+put in it. Fourteen fields, most of them defaults.
 
 ---
 
 ## Before you start
 
-The Edge Function has to be deployed. See
-[`supabase/functions/README.md`](supabase/functions/README.md) — one command,
-and it's the same trip as the recipe reader.
+The Edge Function is deployed and tested — nothing to do there.
 
-You also need your ingest token. If you set up the Shortcut you already have it.
-If not, run this in the Supabase SQL editor:
+Your endpoint and token:
+
+| | |
+| --- | --- |
+| URL | `https://mmwymuxutgmwfmvkvxzw.supabase.co/functions/v1/health` |
+| Header name | `x-trendline-token` |
+| Header value | your ingest token |
+
+If you need the token again, in the Supabase SQL editor:
 
 ```sql
 select token from public.ingest_tokens where label = 'ios-shortcut-steps';
 ```
 
-If that returns nothing, run `supabase/steps-ingest.sql` first — it creates the
-token and prints it.
-
-Your URL is that token on the end of the function address:
-
-```
-https://mmwymuxutgmwfmvkvxzw.supabase.co/functions/v1/health?token=YOUR_TOKEN_HERE
-```
-
-Treat it like a key, because it is one. A narrow one — see the README for what
-it can and cannot do — but a key.
+The token goes in a **header**, not on the end of the URL. Both work, but URLs
+turn up in logs, screenshots and share sheets in a way headers don't. It is a
+narrow token either way — all it can do is set a step count on one day — but
+there's no reason to hand it around more than necessary.
 
 ---
 
-## On the phone
+## The form, field by field
 
-1. Install **Health Auto Export — JSON+CSV** from the App Store and open it.
-2. Allow it to read **Steps** when iOS asks. It only needs that one.
-3. **Automations → +**
-4. Set it up like this:
+**Automations → New Automation → REST API**
 
-   | Setting | Value | Why |
-   | --- | --- | --- |
-   | Automation type | **REST API** | |
-   | URL | the address above, token and all | |
-   | Method | **POST** | |
-   | Data type | **Health Metrics** | not Workouts |
-   | Export format | **JSON** | |
-   | Aggregation / Period | **Days** | one row per day, which is what a day's step count is |
-   | Date range | **Last 7 days** | see below |
-   | Schedule | hourly, or as often as it offers | see below |
+| # | Field | Set it to | Why |
+| --- | --- | --- | --- |
+| 1 | Automation Name | `Trendline steps` | |
+| 2 | Notifications | **Notify When Run** on | Turn it off once you trust it. For the first few days you want to see it fire. |
+| 3 | URL | the address above | |
+| 4 | Request Timeout | leave default | The function answers in well under a second. |
+| 5 | HTTP Headers | key `x-trendline-token`, value your token | This is the authentication. |
+| 6 | Data Type | **Health Metrics** | Not Workouts — see the last section. |
+| 7 | Health Metrics | **Steps** only | Everything else is ignored on arrival, so sending it only costs battery. |
+| 8 | Export Format | **JSON** | CSV is not read. |
+| 9 | Export Version | **Version 2** | Either works — v2 only changes workout data, and metrics are identical — but v2 is the current one. |
+| 10 | Date Range | **Previous 7 Days** | See below. This is the important one. |
+| 11 | Summarize Data | **on** | Gives one figure per period instead of every raw sample. |
+| 12 | Time Grouping | **Day** | One number per day, which is what a day's step count is. |
+| 13 | Batch Requests | **off** | Only matters for payloads far larger than this. |
+| 14 | Sync Cadence | as often as offered | Cheap, and it makes the locked-phone problem below mostly go away. |
 
-5. Under **Health Metrics**, select **Steps** and nothing else. Other metrics
-   are ignored on arrival, so sending them only wastes battery.
-6. Tap **Run** / **Export Now** once to test it.
-
-You should get a response like:
+Tap **Run** to test. You should get back:
 
 ```json
 { "ok": true, "written": 7, "days": ["2026-09-05", "2026-09-04", …] }
@@ -78,47 +82,62 @@ Open Trendline, pull it fresh, and the days are in the log.
 Two reasons, and they compound.
 
 **Apple Health cannot be read while the phone is locked.** That is an iOS
-security property, not a bug in the app and not something any app can work
-around. A scheduled export that fires while the phone is sitting locked on a
-bedside table reads nothing. Any promise of "it runs every night with nothing to
-open" is overselling — including the one I made earlier about the Shortcut.
+security property, not a bug in the app and not something any app works around.
+An export that fires while the phone sits locked on a bedside table reads
+nothing. Any promise of "it runs every night with nothing to open" is overselling
+— including the one I made about the Shortcut route.
 
 **Garmin's numbers arrive late.** The watch syncs when it syncs, and a day's
 step count can still be climbing hours after the day ended.
 
-Re-sending the last seven days every time fixes both. A run that catches the
-phone unlocked backfills whatever the locked runs missed, and a day that was
-still settling gets corrected on the next pass.
+Re-sending the last seven days fixes both. A run that catches the phone unlocked
+backfills whatever the locked runs missed, and a day still settling gets
+corrected on the next pass.
 
-Re-sending is safe: `ingest_steps` writes one row per date, keyed on the date
-itself, so sending the same day fifty times leaves one row with the latest
-figure. It replaces, it never accumulates. That matters more than it sounds —
+Re-sending is safe. `ingest_steps` writes one row per date, keyed on the date
+itself, so sending the same day fifty times leaves one row holding the latest
+figure. It replaces; it never accumulates. That matters more than it sounds:
 steps feed the exercise credit that comes off your calorie budget, and a
 double-counted day would quietly hand you calories you never earned.
+
+### If the scheduled runs keep missing
+
+Health Auto Export exposes a **Run Automation** action to Apple Shortcuts. So
+you can trigger it from a Shortcuts *personal automation* — "when I open
+Trendline", or when the phone connects to CarPlay, or any other trigger that
+implies the phone is in your hand and unlocked. That is a more reliable clock
+than a fixed time, because it fires when the precondition is actually met
+rather than hoping it will be.
+
+Worth setting up only if the built-in cadence proves unreliable. Try it plain
+first.
 
 ---
 
 ## When it doesn't work
 
-**`{"error": "That ingest token is not recognised."}`**
-The token on the end of the URL is wrong or has been revoked. Re-run the
-`select` above and check it against what's in the app, character for character.
+Every failure returns a sentence, not a status code. Read the response.
 
-**`{"ok": true, "written": 0, "note": "No step data in that export. It carried: …"}`**
-It ran, and sent something other than steps. The note names what actually
-arrived — go back to **Health Metrics** and select Steps.
+**`"That ingest token is not recognised."`**
+The header value is wrong or the token was revoked. Re-run the `select` above and
+compare it character for character. Check the header *name* too —
+`x-trendline-token`, all lower case, no spaces.
 
-**`{"ok": true, "written": 0, "note": "That export contained no metrics at all."}`**
-Usually the phone was locked when it fired, or the date range is empty. Unlock
-the phone and run it by hand to confirm the setup is right.
+**`"No step data in that export. It carried: …"`**
+It ran and sent something other than steps. The note names what actually
+arrived. Go back to field 7 and select Steps.
+
+**`"That export contained no metrics at all."`**
+Usually the phone was locked when it fired, or the date range came back empty.
+Unlock the phone and run it by hand to confirm the setup itself is right.
 
 **A 404**
-The function isn't deployed yet. See `supabase/functions/README.md`.
+Check the URL. It ends `/functions/v1/health` with no trailing slash.
 
-**Nothing at all happens on a schedule, but manual runs work**
+**Scheduled runs do nothing, manual runs work**
 That's the locked-phone problem. iOS also throttles background work for apps you
-rarely open. Nothing to fix — the seven-day window is the fix, and it catches up
-the next time the phone is awake.
+rarely open. The seven-day window is the fix, and it catches up whenever the
+phone is next awake.
 
 ---
 
@@ -131,3 +150,12 @@ would double-count: the same session logged once by you in Trendline and once by
 your watch, both feeding the exercise credit. Trendline already knows about your
 lifts and your cardio because you told it. Steps are the one thing it has no
 other way to know.
+
+---
+
+## Reference
+
+- [REST API automation setup](https://help.healthyapps.dev/en/health-auto-export/automations/rest-api/)
+- [JSON export format](https://help.healthyapps.dev/en/health-auto-export/export-format/)
+- [Health metrics format](https://help.healthyapps.dev/en/health-auto-export/export-format/health-metrics/)
+- [Backup and restore, and the absence of automation import](https://help.healthyapps.dev/en/health-auto-export/automations/)

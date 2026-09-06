@@ -48,16 +48,21 @@ function json(body: unknown, status = 200): Response {
   });
 }
 
-// The token may arrive in a header or on the query string. Health Auto
-// Export's older builds only let you set a URL, so the query string has
-// to work; a header is tidier where it is available.
-function tokenFrom(req: Request): string {
-  const url = new URL(req.url);
-  return (
-    req.headers.get('x-trendline-token') ||
-    url.searchParams.get('token') ||
-    ''
-  ).trim();
+// The token may arrive in a header or on the query string. A header is
+// preferred — URLs turn up in logs and share sheets in a way headers do
+// not — but the query string stays supported, because some builds only
+// let you set a URL.
+//
+// Which one it came from is returned alongside it, purely so a failure
+// can say "check the header" to someone who used a header. Being told
+// to check the end of a URL you never touched is the kind of small
+// wrongness that sends people looking in the wrong place for an hour.
+function tokenFrom(req: Request): { token: string; where: 'header' | 'url' | 'none' } {
+  const header = (req.headers.get('x-trendline-token') || '').trim();
+  if (header) return { token: header, where: 'header' };
+  const query = (new URL(req.url).searchParams.get('token') || '').trim();
+  if (query) return { token: query, where: 'url' };
+  return { token: '', where: 'none' };
 }
 
 async function writeDay(
@@ -90,9 +95,11 @@ Deno.serve(async (req: Request) => {
     return json({ error: 'POST a Health Auto Export payload.' }, 405);
   }
 
-  const token = tokenFrom(req);
+  const { token, where } = tokenFrom(req);
   if (!token) {
-    return json({ error: 'No ingest token. Add ?token=… to the URL.' }, 401);
+    return json({
+      error: 'No ingest token. Send it as an x-trendline-token header, or add ?token=… to the URL.',
+    }, 401);
   }
 
   let payload: unknown;
@@ -142,7 +149,8 @@ Deno.serve(async (req: Request) => {
       ok: false,
       written: 0,
       error: bad
-        ? 'That ingest token is not recognised. Check the token on the end of the URL.'
+        ? 'That ingest token is not recognised. Check the ' +
+          (where === 'header' ? 'x-trendline-token header.' : 'token on the end of the URL.')
         : 'Nothing could be written.',
       detail: first,
     }, bad ? 401 : 502);
