@@ -8,7 +8,32 @@ Health and post anywhere. So the chain is
 Garmin watch → Garmin Connect → Apple Health → Shortcut → Trendline
 ```
 
-Once set up it runs itself, nightly, with nothing to open.
+---
+
+## There is now an easier route
+
+Health Auto Export does the phone half of this for about six dollars a year,
+replacing every step below with a form. See
+[`HEALTH-EXPORT.md`](HEALTH-EXPORT.md). Both routes end at the same database
+function and you can switch between them freely — the token is the same one.
+
+This page stays because it costs nothing and does work.
+
+## A correction to what this page used to claim
+
+It said the Shortcut "runs itself, nightly, with nothing to open." That was
+too strong, and the reason applies to both routes:
+
+**Apple Health cannot be read while the phone is locked.** An automation that
+fires at 11pm while the phone sits locked on a bedside table reads nothing. It
+is an iOS security property — no app or Shortcut gets around it.
+
+So schedule it for a time you are usually holding the phone, and have it send
+the last several days rather than only yesterday. `ingest_steps` keys its row on
+the date, so re-sending a day replaces it instead of adding to it, and a run
+that catches the phone awake backfills whatever the locked runs missed. That
+also picks up late Garmin syncs, where a day's count is still climbing hours
+after the day ended.
 
 ---
 

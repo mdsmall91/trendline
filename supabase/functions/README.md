@@ -1,0 +1,153 @@
+# Edge Functions
+
+Two small servers. Everything else in Trendline runs in the browser; these
+two exist because there are exactly two things a browser is not allowed to do.
+
+| Function | Why it can't be done in the app |
+| --- | --- |
+| `recipe` | A browser cannot read another site's page. |
+| `health` | An iPhone app cannot hold a Supabase session. |
+
+Neither holds a secret key. Neither can read your data.
+
+---
+
+## Installing them
+
+You need the Supabase CLI once. On Windows:
+
+```bash
+winget install Supabase.CLI
+```
+
+Then, from the `trendline` folder:
+
+```bash
+supabase login
+```
+
+That opens a browser and hands the CLI a token.
+
+```bash
+supabase link --project-ref mmwymuxutgmwfmvkvxzw
+```
+
+```bash
+supabase functions deploy recipe
+```
+
+```bash
+supabase functions deploy health --no-verify-jwt
+```
+
+**The `--no-verify-jwt` on the second one is not optional and not laziness.**
+See "Why the two are secured differently" below.
+
+To check they arrived:
+
+```bash
+supabase functions list
+```
+
+### If you would rather not install the CLI
+
+Both can be pasted into the dashboard instead: **Edge Functions → Deploy a new
+function → via editor**. Name them `recipe` and `health`, paste the contents of
+each `index.ts`, and deploy.
+
+Two things to watch if you go this way:
+
+- `health` imports `parse.js` from the folder next to it. In the dashboard
+  editor, create that second file with the same name before deploying, or the
+  function will fail to boot.
+- The editor has a **Verify JWT** toggle. Leave it **on** for `recipe`. Turn it
+  **off** for `health`.
+
+---
+
+## Why the two are secured differently
+
+This looks inconsistent and isn't.
+
+**`recipe` requires a signed-in account.** It fetches arbitrary URLs, and an
+open endpoint that does that is a gift to anyone who finds it — they get to make
+requests that appear to come from inside Supabase's network. Requiring a JWT
+means the caller has an account on this project, and the only account is yours.
+It also refuses private and loopback addresses, re-checks after every redirect,
+caps what it reads, and gives up after twelve seconds.
+
+**`health` cannot require one.** Health Auto Export posts JSON to a URL on a
+schedule; it has no way to sign in to Supabase, hold a session, or refresh a
+token. So it authenticates on the ingest token instead — the same token the iOS
+Shortcut uses, checked inside the database by `ingest_steps`.
+
+That function is the reason this is safe rather than merely convenient. It can
+do exactly one thing: set the step count on one day. It cannot read your weight,
+your food, or anything else. The Edge Function holds no elevated key of its own —
+it forwards to `ingest_steps` with the public anon key and the token, so it has
+no more power than the Shortcut did.
+
+If the URL leaked tomorrow, the worst available outcome is someone lying to you
+about how far you walked. You revoke it with one `DELETE`.
+
+---
+
+## `recipe`
+
+**Called by:** Foods → Recipes → *Add from a link*
+**Requires:** a signed-in Trendline account
+
+Fetches a recipe page and returns the `<script type="application/ld+json">`
+blocks in it. That is the whole job. It does not decide what a serving is or
+what the calories are — that lives in `js/recipe.js`, in the app, tested against
+saved fixtures from four real pages in `tests/recipe-tests.html`.
+
+Keeping the parsing in the app and the fetching in the function is deliberate:
+the interesting half is the half that can be tested without a network, and it
+runs where you can see it.
+
+### What it will and won't find
+
+Recipe sites publish nutrition as structured data because that is what puts a
+calorie count into a Google result. It is a declared, machine-readable field.
+The reader takes those stated figures and nothing else — it never reads the
+ingredient list, never estimates, and never fills a gap with a plausible number.
+
+So there are three honest outcomes, and the card says which one you got:
+
+- **the numbers, per serving** — the common case
+- **"that recipe does not publish nutrition"** — name and servings still get
+  filled in, the four macro boxes are yours to complete
+- **"that site would not let the reader in"** — some publishers block anything
+  that isn't a person clicking, and there is no polite way around that
+
+Of the four sites tested while building it, four published a complete set.
+
+---
+
+## `health`
+
+**Called by:** Health Auto Export on your iPhone
+**Requires:** a valid ingest token on the URL
+
+Turns a Health Auto Export payload into daily step rows. Setup for the phone
+side is in [`../../HEALTH-EXPORT.md`](../../HEALTH-EXPORT.md).
+
+Steps only, on purpose. Garmin also writes workouts and active energy into Apple
+Health, and importing those would double-count against the sessions you log in
+Trendline — the same lift counted twice, once by you and once by your watch,
+both feeding the exercise credit that comes off the calorie budget. Steps are
+the one thing Trendline does not otherwise record.
+
+The parser (`health/parse.js`) is imported by both the function and
+`tests/health-tests.html`, so the code the tests ran against is the code that
+runs on the server.
+
+---
+
+## Changing them later
+
+Edit and re-deploy the same way; the URL stays the same. Logs are under
+**Edge Functions → [name] → Logs** in the dashboard, and each function returns a
+sentence rather than a status code when it fails, so most problems read
+straight off the response.

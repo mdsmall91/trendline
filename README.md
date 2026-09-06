@@ -198,6 +198,28 @@ looked up is written into your library, so the second time you eat it there
 is no network call — the library is the cache and there is no second one.
 Manual entry never went anywhere; lookup just saves the typing.
 
+**5b. Recipes from a link.** Paste a recipe URL and the nutrition arrives
+filled in. This is not scraping: recipe sites publish their figures as
+schema.org structured data because that is what puts a calorie count into a
+Google result, so the reader takes declared, machine-readable fields. It
+never reads the ingredient list and never estimates.
+
+Which means three honest outcomes, and the card says which one you got: the
+numbers, "that recipe does not publish nutrition" (name and servings still
+filled in), or "that site would not let the reader in". Four of the four
+sites tested published a complete set.
+
+What comes back lands in the add-a-recipe form rather than saving itself —
+sites do get their own nutrition wrong, and the numbers are per serving as
+the *site* defines a serving. Both are one glance to check and impossible to
+notice afterwards.
+
+The one trap worth naming: `recipeYield` is the loosest field in the whole
+object. One tested site yields `["2", "2 cups (8 servings)"]` — two cups,
+eight portions. Taking the first value is wrong by a factor of four. So a
+value that says "servings" wins wherever it sits, and when nothing does, the
+app says the count is a guess instead of picking one confidently.
+
 Servings are the hard part, not nutrients. Every source states per-100g,
 only some state per-serving, and "serving" means whatever the manufacturer
 decided. So the app keeps both, and where a source gives no serving the
@@ -269,6 +291,8 @@ js/core.js              the engine. Pure functions, no DOM, no storage.
 js/store.js             local-first storage, v1 migration, dirty tracking
 js/sync.js              merge logic + Supabase REST/auth over plain fetch
 js/foodapi.js           Open Food Facts + USDA normalizers and lookups
+js/recipe.js            reads schema.org Recipe nutrition out of a page's
+                        structured data. Pure; the fetching is an Edge Function
 js/scanner.js           camera barcode scanning, wrapping the vendored lib
 js/gym.js               exercise catalog: search, substitution, selectable loads
 js/chart.js             hand-rolled SVG. No charting library.
@@ -278,28 +302,38 @@ sw.js                   offline shell. Only caches same-origin assets —
                         a cached sync response would be worse than none.
 vendor/                 html5-qrcode, vendored rather than CDN-loaded so
                         scanning still works with no signal. Lazy-loaded.
-data/                   exercise catalog, session templates, this gym
-s                        real equipment. See data/README.md.
+data/                   exercise catalog, session templates, this gym's
+                        real equipment. See data/README.md.
 supabase/schema.sql     tables, indexes, RLS policies
 supabase/steps-ingest.sql  write-only token + function for the
                         iOS Shortcut that posts daily steps
+supabase/functions/     the only two things a browser may not do:
+                          recipe/  fetch another site's page
+                          health/  receive Health Auto Export's steps
+                        Neither holds a key. See its README.
 SETUP.md                Supabase walkthrough
-STEPS-SHORTCUT.md       Garmin steps into the log, automatically
-tests/                  403 assertions
+STEPS-SHORTCUT.md       Garmin steps into the log, by hand-built Shortcut
+HEALTH-EXPORT.md        the same thing, via Health Auto Export
+tests/                  551 assertions
 ```
 
 ## Tests
 
 ```
-node tests/tests.js         # 106 — the engine, incl. training calories
-node tests/sync-tests.js    # 86  — merge logic, wire format, session safety
-node tests/food-tests.js    # 77  — food lookup normalizers, no network
-node tests/gym-tests.js     # 42  — catalog search, substitution, real loads
-node tests/progress-tests.js # 77 — e1RM, RIR, load selection, the rules
+node tests/tests.js          # 106 — the engine, incl. training calories
+node tests/sync-tests.js     # 101 — merge logic, wire format, session safety
+node tests/food-tests.js     #  77 — food lookup normalizers, no network
+node tests/gym-tests.js      #  42 — catalog search, substitution, real loads
+node tests/progress-tests.js #  77 — e1RM, RIR, load selection, the rules
+node tests/recipe-tests.js   # 100 — recipe reading, against four real pages
 ```
 
-Or open `tests/tests.html`, `tests/sync-tests.html` and
-`tests/food-tests.html` in a browser.
+Or open any of the `tests/*.html` pages in a browser, which is the only
+way to run `health-tests.html` — 48 assertions on the Health Auto Export
+reader, which is an ES module because the Edge Function imports the same
+file. Serve the folder rather than opening it from disk; modules need
+http. If the app's service worker has cached an old copy, unregister it
+first.
 
 The two that matter most:
 

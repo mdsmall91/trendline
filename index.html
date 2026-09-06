@@ -73,8 +73,12 @@
 
   <div class="card">
     <h2>Food</h2>
-    <ul class="list" id="foodLog"></ul>
-    <div style="margin-top:var(--s-4)">
+    <!-- The box you type in comes before the list of what you already
+         ate. It used to come after, which read nicely on an empty day
+         and got worse with every entry: by dinner the one control you
+         came to this card to use had been pushed a screen and a half
+         down by the record of having used it. -->
+    <div>
       <div class="row">
         <label class="field" style="margin:0">
           <span class="sr">Food</span>
@@ -141,6 +145,7 @@
       </div>
       <div class="hint" id="foodHint">Type a name you've logged before and it fills itself in. A new name asks for its macros once, then joins your library. Scan a package or look it up and the macros arrive filled in.</div>
     </div>
+    <ul class="list" id="foodLog" style="margin-top:var(--s-4)"></ul>
   </div>
 
   <div class="card">
@@ -424,6 +429,22 @@
     <button data-lib="recipe" aria-pressed="false">Recipes</button>
   </div>
 
+  <!-- Recipes only. A packaged food has a barcode; a recipe on a blog
+       has a URL, and that URL carries its nutrition as published data. -->
+  <div class="card" id="recipeImport" hidden>
+    <h2>Add from a link</h2>
+    <div class="hint" style="margin:0 0 var(--s-3)">Paste a recipe page. Most publish their
+      nutrition per serving as structured data, and that is what gets read — the stated
+      figures, not a guess from the ingredients.</div>
+    <div class="row">
+      <label class="field" style="margin:0"><span class="sr">Recipe link</span>
+        <input type="url" id="riUrl" inputmode="url" autocomplete="off" autocapitalize="off"
+               placeholder="https://…"></label>
+      <button class="btn primary grow-0" id="riGo">Read</button>
+    </div>
+    <div class="hint" id="riStatus"></div>
+  </div>
+
   <div class="card" id="newFoodCard" hidden>
     <h2 id="nfTitle">Add a food</h2>
     <label class="field"><span>Name</span>
@@ -601,6 +622,7 @@
 <script src="js/store.js"></script>
 <script src="js/sync.js"></script>
 <script src="js/foodapi.js"></script>
+<script src="js/recipe.js"></script>
 <script src="js/scanner.js"></script>
 <script src="js/gym.js"></script>
 <script src="js/progress.js"></script>

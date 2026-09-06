@@ -84,10 +84,12 @@ body {
 
 /* ---------- header ---------- */
 
+/* Same reasoning as .tabs below: opaque rather than blurred, because a
+   header that stutters while you scroll is worse than one that hides
+   what passes under it. */
 .top {
   position: sticky; top: 0; z-index: 20;
-  background: color-mix(in oklch, var(--paper) 92%, transparent);
-  backdrop-filter: blur(10px);
+  background: var(--paper);
   border-bottom: var(--hairline);
 }
 .top-in {
@@ -108,10 +110,23 @@ body {
 
 /* ---------- tabs ---------- */
 
+/* Opaque, and on its own compositing layer, on purpose.
+
+   This bar was translucent with a backdrop blur, which looked better
+   standing still and came apart in motion: a blurred backdrop has to be
+   re-sampled from the page behind it on every frame, and iOS Safari
+   gives up on that during a momentum scroll. The bar then lags behind
+   the viewport and appears to drift up into the content — which only
+   shows on pages long enough to throw, so the tabs that scroll least
+   looked fine and Train looked broken.
+
+   translateZ(0) promotes it to a layer of its own so scrolling the page
+   underneath does not repaint it at all. An opaque background is what
+   makes that possible; the blur is what made it impossible. */
 .tabs {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;
-  display: flex; background: color-mix(in oklch, var(--paper) 94%, transparent);
-  backdrop-filter: blur(10px);
+  display: flex; background: var(--paper);
+  transform: translateZ(0);
   border-top: var(--hairline);
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }

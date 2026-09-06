@@ -571,6 +571,10 @@ var Sync = (function () {
     configured: configured, configSource: configSource,
     setConfig: setConfig, clearConfig: clearConfig,
     signedIn: signedIn, account: account,
+    /* Exposed so the recipe reader can call its Edge Function as you.
+       Nothing else needs it: every other request in the app goes
+       through run(). */
+    accessToken: accessToken,
     signUp: signUp, signInPassword: signInPassword,
     requestCode: requestCode, verifyCode: verifyCode, signOut: signOut,
     run: run, pendingCount: pendingCount

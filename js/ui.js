@@ -14,7 +14,7 @@
   /* Bumped by hand on each deploy, and shown under Setup → Version.
      Its only job is to let "it still looks old" be answered with a
      number instead of a guess. Keep it in step with CACHE in sw.js. */
-  var BUILD = '2026-09-05.16';
+  var BUILD = '2026-09-05.17';
   var day = WL.todayKey();
   var range = 30;
   var foodFilterText = '';
@@ -454,6 +454,10 @@
       '<span id="foodCount">' + all.length + '</span>)';
     $('nfTitle').textContent = isRecipe ? 'Add a recipe' : 'Add a food';
     $('nfServingsRow').hidden = !isRecipe;
+    /* A packaged food is found by barcode; a recipe is found by its
+       link. Offering the link box on the Foods tab would be offering a
+       route that mostly does not exist there. */
+    $('recipeImport').hidden = !isRecipe;
     $('foodFilter').placeholder = isRecipe ? 'Filter by name' : 'Filter by name';
 
     /* Chips come from what is tagged within THIS tab. Offering a tag
@@ -2275,6 +2279,63 @@
   });
 
   $('cancelFood').addEventListener('click', function () { $('newFoodCard').hidden = true; });
+
+  /* ---------------------------------------------------------------
+     A RECIPE FROM A LINK
+
+     What comes back lands in the ordinary add-a-recipe form rather
+     than saving itself. Two reasons, and neither is caution for its
+     own sake: sites do get their own nutrition wrong, and the numbers
+     are per serving as the site defines a serving, which may not be
+     how much you actually ate. Both are one glance to check and
+     impossible to notice after the fact.
+     --------------------------------------------------------------- */
+
+  function readRecipeLink() {
+    var raw = $('riUrl').value.trim();
+    if (!raw) { $('riUrl').focus(); return; }
+    var st = $('riStatus');
+    st.textContent = 'Reading the page…';
+    $('riGo').disabled = true;
+
+    Recipe.lookup(raw).then(function (r) {
+      $('riGo').disabled = false;
+      st.textContent = Recipe.summary(r);
+
+      /* Nothing recipe-shaped on the page. Opening an empty form on
+         top of that would suggest something had been found. */
+      if (r.reason === 'no-recipe') return;
+
+      $('nfName').value = r.name || '';
+      $('nfServing').value = r.servingLabel || '1 serving';
+      $('nfServings').value = r.servings ? String(r.servings) : '';
+      $('nfTags').value = '';
+      var per = r.per || {};
+      $('nfKcal').value = per.kcal === null || per.kcal === undefined ? '' : String(per.kcal);
+      $('nfP').value = per.protein === null || per.protein === undefined ? '' : String(per.protein);
+      $('nfC').value = per.carbs === null || per.carbs === undefined ? '' : String(per.carbs);
+      $('nfF').value = per.fat === null || per.fat === undefined ? '' : String(per.fat);
+
+      $('newFoodCard').hidden = false;
+      $('newFoodCard').scrollIntoView({ block: 'center', behavior: 'smooth' });
+
+      /* Land the cursor on the first thing the page did not state, so
+         the gap is the next thing touched rather than something to be
+         spotted later. */
+      if (!r.ok) {
+        var first = { calories: 'nfKcal', protein: 'nfP', carbs: 'nfC', fat: 'nfF' }[(r.missing || [])[0]];
+        $(first || 'nfName').focus();
+      }
+    }).catch(function (e) {
+      $('riGo').disabled = false;
+      st.textContent = e.message || 'That page could not be read.';
+    });
+  }
+
+  $('riGo').addEventListener('click', readRecipeLink);
+  $('riUrl').addEventListener('keydown', function (ev) {
+    if (ev.key === 'Enter') { ev.preventDefault(); readRecipeLink(); }
+  });
 
   $('macroSeg').addEventListener('click', function (ev) {
     var b = ev.target.closest('[data-macro]');
