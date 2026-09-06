@@ -14,30 +14,41 @@ Neither holds a secret key. Neither can read your data.
 
 ## Installing them
 
-You need the Supabase CLI once. On Windows:
+Two routes. Neither needs a paid anything.
 
-```bash
-winget install Supabase.CLI
-```
+### Route A — paste them into the dashboard
 
-Then, from the `trendline` folder:
+Nothing to install. **Edge Functions → Deploy a new function → via editor.**
+Name them `recipe` and `health`, paste the contents of each `index.ts`, turn
+**Verify JWT off**, deploy.
+
+`health` needs a second file, `parse.js`, alongside its `index.ts` — create it
+in the editor's file tree with that exact name before deploying, or the function
+will not boot.
+
+### Route B — the CLI
+
+The Supabase CLI is not in winget, and there is no npm here, so on this machine
+it means downloading the release binary by hand: `supabase_windows_amd64.zip`
+from <https://github.com/supabase/cli/releases/latest>, about 56 MB. Unzip
+`supabase.exe` anywhere and call it by its full path.
 
 ```bash
 supabase login
 ```
 
-That opens a browser and hands the CLI a token.
+Opens a browser and stores a token. Interactive — it has to be run in a real
+terminal.
+
+Then, from the `trendline` folder — note `--project-ref`, which skips linking
+and the database password prompt that comes with it:
 
 ```bash
-supabase link --project-ref mmwymuxutgmwfmvkvxzw
+supabase functions deploy recipe --project-ref mmwymuxutgmwfmvkvxzw --no-verify-jwt
 ```
 
 ```bash
-supabase functions deploy recipe --no-verify-jwt
-```
-
-```bash
-supabase functions deploy health --no-verify-jwt
+supabase functions deploy health --project-ref mmwymuxutgmwfmvkvxzw --no-verify-jwt
 ```
 
 **The `--no-verify-jwt` is not laziness, and it does not mean unauthenticated.**
@@ -50,20 +61,6 @@ To check they arrived:
 ```bash
 supabase functions list
 ```
-
-### If you would rather not install the CLI
-
-Both can be pasted into the dashboard instead: **Edge Functions → Deploy a new
-function → via editor**. Name them `recipe` and `health`, paste the contents of
-each `index.ts`, and deploy.
-
-Two things to watch if you go this way:
-
-- `health` imports `parse.js` from the folder next to it. In the dashboard
-  editor, create that second file with the same name before deploying, or the
-  function will fail to boot.
-- The editor has a **Verify JWT** toggle. Turn it **off** for both. Each
-  function does its own checking; see below.
 
 ---
 
