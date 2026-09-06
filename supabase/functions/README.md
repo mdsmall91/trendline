@@ -7,8 +7,10 @@ two exist because there are exactly two things a browser is not allowed to do.
 | --- | --- |
 | `recipe` | A browser cannot read another site's page. |
 | `health` | An iPhone app cannot hold a Supabase session. |
+| `plate` | A key that reads photographs must not ship in a web app. |
 
-Neither holds a secret key. Neither can read your data.
+None of them can read your data. Only `plate` holds a secret, and it holds it in
+Supabase's secret store rather than in this repository.
 
 ---
 
@@ -49,6 +51,16 @@ supabase functions deploy recipe --project-ref mmwymuxutgmwfmvkvxzw --no-verify-
 
 ```bash
 supabase functions deploy health --project-ref mmwymuxutgmwfmvkvxzw --no-verify-jwt
+```
+
+The plate reader needs a key of its own, set once and stored by Supabase:
+
+```bash
+supabase secrets set ANTHROPIC_API_KEY=sk-ant-... --project-ref mmwymuxutgmwfmvkvxzw
+```
+
+```bash
+supabase functions deploy plate --project-ref mmwymuxutgmwfmvkvxzw --no-verify-jwt
 ```
 
 **The `--no-verify-jwt` is not laziness, and it does not mean unauthenticated.**
@@ -151,6 +163,52 @@ the one thing Trendline does not otherwise record.
 The parser (`health/parse.js`) is imported by both the function and
 `tests/health-tests.html`, so the code the tests ran against is the code that
 runs on the server.
+
+---
+
+## `plate`
+
+**Called by:** Today → *Scan a plate*
+**Requires:** a signed-in account, and `ANTHROPIC_API_KEY` in the project secrets
+
+Photographs a meal and returns what is probably on it, with probable amounts.
+Every word there is load-bearing.
+
+A model reading a photograph identifies foods well and weighs them badly. There
+is no scale in the picture and no second viewpoint, so the difference between
+120 g and 200 g of rice is a centimetre of mound height a photograph does not
+resolve. The design follows from that rather than apologising for it afterwards:
+
+- every item carries a confidence, and the prompt tells the model to use *low*
+  freely rather than to look decisive
+- **nothing is ever logged from here directly** — results open as an editable
+  list and you confirm
+- any row can be looked up in USDA at its estimated weight, which replaces a
+  guess with a measurement and brings the micronutrients with it
+
+That last point is the whole design. The model is good at "that is a chicken
+thigh, about 140 g". A database is good at "140 g of chicken thigh contains
+this". Each does the half it is good at — and the confidence stays where it was
+after a lookup, because the database fixed what is *in* the food and knows
+nothing about how much of it was on the plate.
+
+An estimate presented as a measurement would be worse than no feature at all: it
+would quietly poison the calorie history that the adaptive TDEE — energy balance
+run backwards over exactly this data — is computed from.
+
+### Cost
+
+One image plus a short reply to Claude Sonnet, on the order of a cent or two per
+scan at current prices. The function passes token usage back so the app can say
+what a scan cost rather than leaving it a mystery. The photo is shrunk to 1024px
+in the browser first: a plate is recognisable at that size, and the upload is the
+slow part on a phone.
+
+### If the key is missing
+
+It answers 503 with a sentence saying so, rather than failing in a way that looks
+like a bug. Set the secret and there is nothing to redeploy — secrets are read on
+the next invocation.
 
 ---
 

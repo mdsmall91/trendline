@@ -14,7 +14,7 @@
   /* Bumped by hand on each deploy, and shown under Setup → Version.
      Its only job is to let "it still looks old" be answered with a
      number instead of a guess. Keep it in step with CACHE in sw.js. */
-  var BUILD = '2026-09-06.22';
+  var BUILD = '2026-09-06.23';
   var day = WL.todayKey();
   var range = 30;
   var foodFilterText = '';
@@ -445,6 +445,46 @@
       (macroKey === 'protein'
         ? '. Protein is the one to defend on a deficit — it is what decides whether the weight you lose is fat.'
         : '. ' + name + ' is the remainder after protein and calories, so there is no such thing as being over on it.');
+  }
+
+  /* ---------------------------------------------------------------
+     WATER
+
+     One running total for the day rather than a list of glasses.
+     Nobody wants to audit their own hydration; they want to know
+     whether to have another one.
+     --------------------------------------------------------------- */
+
+  function renderWater() {
+    var goal = num0(Store.settings().waterGoalOz, 64);
+    var oz = Store.waterOn(day);
+    var pct = goal > 0 ? Math.min(100, (oz / goal) * 100) : 0;
+
+    $('waterReadout').textContent = fmt(oz) + ' / ' + fmt(goal) + ' oz';
+    $('waterBar').style.width = pct + '%';
+    /* The slider runs past the goal on purpose. A scale that stops at
+       the target cannot show the days you went past it, and quietly
+       suggests there is something wrong with having done so. */
+    $('waterSlider').max = String(Math.max(128, Math.ceil(goal * 1.5 / 4) * 4));
+    if (document.activeElement !== $('waterSlider')) $('waterSlider').value = String(oz);
+    if (document.activeElement !== $('waterInput')) $('waterInput').value = oz ? String(oz) : '';
+
+    var left = goal - oz;
+    $('waterHint').textContent = goal <= 0
+      ? 'No goal set. Setup \u2192 Water and steps.'
+      : (left > 0
+        ? fmt(left) + ' oz to go. A pint glass is about 16.'
+        : (oz === goal ? 'Goal met.' : 'Goal met, ' + fmt(oz - goal) + ' oz past it.'));
+  }
+
+  function num0(v, fallback) {
+    return (typeof v === 'number' && isFinite(v) && v >= 0) ? v : fallback;
+  }
+
+  function setWater(oz) {
+    Store.setWater(day, Math.max(0, oz));
+    renderWater();
+    scheduleSync();
   }
 
   /* ---------------------------------------------------------------
@@ -1331,7 +1371,9 @@
     var existing = Store.findFoodByName(b.name);
     var f = Store.addFood({
       id: existing ? existing.id : undefined,
-      name: b.name, serving: serving, micros: b.micros || null,
+      /* undefined, not null: addFood keeps what it already had when a
+         field is absent, and only a real panel should replace one. */
+      name: b.name, serving: serving, micros: b.micros || undefined,
       kcal: vals.kcal, protein: vals.protein, carbs: vals.carbs, fat: vals.fat
     });
 
@@ -1511,6 +1553,13 @@
      --------------------------------------------------------------- */
 
   function renderSettings() {
+    var st0 = Store.settings();
+    if (document.activeElement !== $('stWaterGoal')) {
+      $('stWaterGoal').value = String(num0(st0.waterGoalOz, 64));
+    }
+    if (document.activeElement !== $('stStepsShortcut')) {
+      $('stStepsShortcut').value = st0.stepsShortcut || '';
+    }
     var s = Store.settings();
     function setIf(id, v) { if (document.activeElement !== $(id)) $(id).value = v; }
     setIf('stAge', s.age);
@@ -1551,6 +1600,7 @@
   function render() {
     var D = derive();
     renderToday(D);
+    renderWater();
     renderMicros();
     renderTrend(D);
     renderTrain(D);
@@ -1751,14 +1801,26 @@
 
     if (needs) {
       var asMass = (needs === 'g' || needs === 'oz');
+      /* The question names the macros it applies to, because on its own
+         it is ambiguous in a way that goes wrong quietly. "One serving
+         weighs how much" invites the weight of the tub, or of the
+         portion on the label, or of what you just ate — and whichever
+         you answer, the app silently declares the stored calories to be
+         for THAT weight. Showing the numbers makes the question
+         answerable: this many calories, for how many grams? */
+      var macro = (f.kcal === null || f.kcal === undefined)
+        ? '' : (fmt(f.kcal) + ' cal' +
+            (f.protein !== null && f.protein !== undefined
+              ? ', ' + fmt(f.protein) + 'p ' + fmt(f.carbs) + 'c ' + fmt(f.fat) + 'f' : ''));
       $('unitLearnLabel').textContent = asMass
-        ? 'One serving of ' + f.name + ' weighs, in grams'
-        : 'One serving of ' + f.name + ' is, in cups';
+        ? (macro ? macro + ' — how many grams is that?' : 'One serving weighs, in grams')
+        : (macro ? macro + ' — how many cups is that?' : 'One serving is, in cups');
       $('unitLearnValue').placeholder = asMass ? '226' : '0.5';
       $('unitLearnValue').value = '';
       $('unitNote').textContent = asMass
-        ? 'It is on the tub, next to the serving size. Once it is in, grams and ounces both work.'
-        : 'Roughly what fraction of a cup one serving fills. Tablespoons and teaspoons follow from it.';
+        ? 'The weight the calories above are for — usually the serving size on the tub. ' +
+          'Once it is in, grams and ounces both work.'
+        : 'The amount the calories above are for, as a fraction of a cup.';
     } else if (f && !Units.basisFor(f).mass && !Units.basisFor(f).volumeMl) {
       $('unitNote').textContent = f.name + ' has no weight or volume recorded yet. ' +
         'Choose grams or cups above and it will ask for one.';
@@ -2424,6 +2486,98 @@
     Store.setSteps(day, num($('stepsInput')));
     render();
   }
+  /* ---------------------------------------------------------------
+     FETCHING TODAY'S STEPS
+
+     Worth being precise about what this can do, because the obvious
+     reading of a refresh icon is wrong.
+
+     A web app cannot read Apple Health. That is an iOS rule, not a
+     gap in this app: Health is readable only by native apps the person
+     has granted access to, and only while the phone is unlocked. So
+     nothing here reaches into Health directly, and no button ever
+     will.
+
+     What it can do is both halves of the chain that already exists:
+
+       1. ask iOS to run a Shortcut, which triggers Health Auto Export
+          to send today's steps to the database. Optional, and only
+          works if a Shortcut has been named in Setup.
+       2. pull from the database, which is where the steps land.
+
+     Step 2 alone is still useful — it fetches whatever the last
+     automatic export left there, which on a normal day is minutes old.
+     Step 1 is what makes the number current to the minute.
+     --------------------------------------------------------------- */
+
+  function pullSteps() {
+    var note = $('stepsPullNote');
+    if (!Sync.configured() || !Sync.signedIn()) {
+      note.textContent = 'Sign in first — steps arrive through your account.';
+      return;
+    }
+
+    var name = (Store.settings().stepsShortcut || '').trim();
+    var before = Store.stepsOn(day);
+
+    if (name) {
+      /* Leaves the app. iOS runs the Shortcut, Health Auto Export
+         exports, and coming back fires visibilitychange, which syncs
+         again — so the number is usually there before the person has
+         finished looking at it. */
+      note.textContent = 'Asking Shortcuts to run "' + name + '"…';
+      try {
+        window.location.href = 'shortcuts://run-shortcut?name=' + encodeURIComponent(name);
+      } catch (e) { /* not iOS, or Shortcuts is not installed */ }
+    }
+
+    note.textContent = name ? 'Fetching…' : 'Fetching what your phone last sent…';
+    $('pullSteps').disabled = true;
+    doSync('steps').then(function () {
+      $('pullSteps').disabled = false;
+      var after = Store.stepsOn(day);
+      render();
+      if (after && (!before || after.steps !== before.steps)) {
+        note.textContent = 'Updated: ' + fmt(after.steps) + ' steps.';
+      } else if (after) {
+        note.textContent = 'Still ' + fmt(after.steps) + ' steps — nothing newer has arrived yet.';
+      } else {
+        note.textContent = name
+          ? 'Nothing arrived. If the Shortcut ran, give it a few seconds and try again.'
+          : 'No steps for today yet. Health Auto Export sends them; see HEALTH-EXPORT.md.' +
+            ' You can also name a Shortcut in Setup to fetch on demand.';
+      }
+    }).catch(function (e) {
+      $('pullSteps').disabled = false;
+      note.textContent = 'Could not fetch: ' + String(e.message || e);
+    });
+  }
+
+  /* water */
+  document.querySelector('#panel-today').addEventListener('click', function (ev) {
+    var b = ev.target.closest('[data-water]');
+    if (!b) return;
+    setWater(Store.waterOn(day) + Number(b.dataset.water));
+  });
+  $('waterSlider').addEventListener('input', function () {
+    /* Rendered live while dragging, saved on release: writing on every
+       pixel of a drag would fill the sync queue with a hundred
+       versions of one glass of water. */
+    var v = Number($('waterSlider').value);
+    $('waterReadout').textContent = fmt(v) + ' / ' + fmt(num0(Store.settings().waterGoalOz, 64)) + ' oz';
+  });
+  $('waterSlider').addEventListener('change', function () {
+    setWater(Number($('waterSlider').value));
+  });
+  $('saveWater').addEventListener('click', function () {
+    var v = num($('waterInput'));
+    setWater(v === null ? 0 : v);
+  });
+  $('waterInput').addEventListener('keydown', function (ev) {
+    if (ev.key === 'Enter') { ev.preventDefault(); $('saveWater').click(); }
+  });
+
+  $('pullSteps').addEventListener('click', pullSteps);
   $('saveSteps').addEventListener('click', saveSteps);
   $('stepsInput').addEventListener('change', saveSteps);
   $('stepsInput').addEventListener('keydown', function (ev) {
@@ -2482,6 +2636,10 @@
       return {
         name: f.name, serving: f.serving || '1 serving',
         kcal: f.kcal, protein: f.protein, carbs: f.carbs, fat: f.fat,
+        /* The panel travels with the row. Without it, logging a food
+           from your own suggestions handed saveFoodEdit a null and
+           wiped seventeen nutrients off a food that had them. */
+        micros: f.micros || null,
         source: 'library', kind: f.kind || 'food', localId: f.id
       };
     });
@@ -2550,6 +2708,159 @@
   $('feCancel').addEventListener('click', closeFoodEdit);
   $('foodEdit').addEventListener('keydown', function (ev) {
     if (ev.key === 'Enter') { ev.preventDefault(); saveFoodEdit(); }
+  });
+
+  /* ---------------------------------------------------------------
+     SCAN A PLATE
+
+     Results land in an editable list and are logged only on request.
+     A portion read off a photograph is an estimate, and an estimate
+     written straight into the calorie history would quietly poison
+     every number computed from it — the TDEE most of all, since that
+     is energy balance run backwards over exactly this data.
+     --------------------------------------------------------------- */
+
+  var plateItems = [];
+
+  function renderPlate() {
+    var t = Plate.totals(plateItems);
+    $('plateItems').innerHTML = plateItems.length ? plateItems.map(function (it, i) {
+      var macro = fmt(it.protein) + 'p ' + fmt(it.carbs) + 'c ' + fmt(it.fat) + 'f';
+      return '<li><div class="plate-item">' +
+        '<span class="pname">' + esc(it.name) +
+          ' <span class="conf ' + esc(it.confidence) + '">' + esc(it.confidence) + '</span>' +
+          ' <span class="src ' + esc(it.source) + '">' +
+            (it.source === 'usda' ? 'database' : 'estimate') + '</span></span>' +
+        '<span class="pamt"><input type="text" inputmode="decimal" data-plate-g="' + i +
+          '" value="' + esc(String(it.grams)) + '" aria-label="Grams"></span>' +
+        '<span class="pmacro">g \u00b7 ' + esc(macro) +
+          (it.household ? '  \u00b7  ' + esc(it.household) : '') + '</span>' +
+        '<span class="pkcal">' + fmt(it.kcal) + '</span>' +
+        '<button class="btn ghost grow-0" data-plate-look="' + i + '">Look up</button>' +
+        '<button class="btn ghost grow-0" data-plate-rm="' + i + '" aria-label="Remove">&times;</button>' +
+        '</div></li>';
+    }).join('') : '<li><span class="empty" style="flex:1">Nothing to log.</span></li>';
+
+    $('plateFooter').textContent = plateItems.length
+      ? fmt(t.kcal) + ' cal \u00b7 ' + fmt(t.protein) + 'p ' + fmt(t.carbs) + 'c ' + fmt(t.fat) + 'f. ' +
+        '"Look up" swaps a row\u2019s guess for real database figures at that weight, ' +
+        'and brings its micronutrients with it.'
+      : '';
+  }
+
+  function openPlate() {
+    plateItems = [];
+    $('plateCard').hidden = false;
+    $('plateStatus').textContent = 'Reading the photo\u2026';
+    renderPlate();
+    $('plateCard').scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }
+
+  $('scanPlate').addEventListener('click', function () { $('platePhoto').click(); });
+
+  $('platePhoto').addEventListener('change', function () {
+    var file = $('platePhoto').files[0];
+    $('platePhoto').value = '';
+    if (!file) return;
+    openPlate();
+    Plate.read(file).then(function (result) {
+      plateItems = result.items;
+      $('plateStatus').textContent = Plate.summary(result);
+      renderPlate();
+    }).catch(function (e) {
+      $('plateStatus').textContent = String(e.message || e);
+      renderPlate();
+    });
+  });
+
+  $('plateClose').addEventListener('click', function () {
+    $('plateCard').hidden = true;
+    plateItems = [];
+  });
+
+  $('plateItems').addEventListener('input', function (ev) {
+    var g = ev.target.closest('[data-plate-g]');
+    if (!g) return;
+    var i = Number(g.dataset.plateG);
+    var v = Units.parseAmount(g.value);
+    if (v === null || v <= 0) return;
+    plateItems[i] = Plate.atGrams(plateItems[i], v);
+    /* Re-rendered without touching the box being typed in, which would
+       eat the cursor. Only the numbers beside it move. */
+    var li = g.closest('li');
+    li.querySelector('.pmacro').textContent = 'g \u00b7 ' +
+      fmt(plateItems[i].protein) + 'p ' + fmt(plateItems[i].carbs) + 'c ' + fmt(plateItems[i].fat) + 'f';
+    li.querySelector('.pkcal').textContent = fmt(plateItems[i].kcal);
+    var t = Plate.totals(plateItems);
+    $('plateFooter').textContent = fmt(t.kcal) + ' cal \u00b7 ' + fmt(t.protein) + 'p ' +
+      fmt(t.carbs) + 'c ' + fmt(t.fat) + 'f.';
+  });
+
+  $('plateItems').addEventListener('click', function (ev) {
+    var rm = ev.target.closest('[data-plate-rm]');
+    if (rm) { plateItems.splice(Number(rm.dataset.plateRm), 1); renderPlate(); return; }
+
+    var look = ev.target.closest('[data-plate-look]');
+    if (!look) return;
+    var i = Number(look.dataset.plateLook);
+    var item = plateItems[i];
+    look.disabled = true;
+    look.textContent = '\u2026';
+    /* The point of the whole design: the model is good at "that is a
+       chicken thigh, about 140 g" and a database is good at "140 g of
+       chicken thigh contains this". Each does the half it is good at. */
+    FoodAPI.searchFoods(item.name).then(function (rows) {
+      var hit = rows[0];
+      if (!hit || !hit.per100g || hit.per100g.kcal === null) {
+        look.disabled = false; look.textContent = 'Look up';
+        $('plateStatus').textContent = 'Nothing in USDA matched "' + item.name +
+          '". The estimate stands.';
+        return;
+      }
+      var k = item.grams / 100;
+      plateItems[i] = {
+        name: hit.name, grams: item.grams, household: item.household,
+        confidence: item.confidence, source: 'usda',
+        kcal: Math.round(hit.per100g.kcal * k),
+        protein: Math.round(hit.per100g.protein * k * 10) / 10,
+        carbs: Math.round(hit.per100g.carbs * k * 10) / 10,
+        fat: Math.round(hit.per100g.fat * k * 10) / 10,
+        micros: (hit.micros100g && typeof Micros !== 'undefined')
+          ? Micros.scale(hit.micros100g, k) : null
+      };
+      /* The confidence stays as it was, deliberately. The database
+         fixed what is IN the food; it knows nothing about how much of
+         it was on the plate, which is the part that was uncertain. */
+      $('plateStatus').textContent = 'Swapped in ' + hit.name + ' at ' + item.grams + ' g.';
+      renderPlate();
+    }).catch(function (e) {
+      look.disabled = false; look.textContent = 'Look up';
+      $('plateStatus').textContent = String(e.message || e);
+    });
+  });
+
+  $('plateLogAll').addEventListener('click', function () {
+    if (!plateItems.length) return;
+    plateItems.forEach(function (it) {
+      /* Saved as a food at the weight seen, so it autocompletes next
+         time and its micros are reusable. The entry records grams,
+         like everything else logged. */
+      var existing = Store.findFoodByName(it.name);
+      var f = Store.addFood({
+        id: existing ? existing.id : undefined,
+        name: it.name, serving: it.grams + ' g',
+        micros: it.micros || undefined,
+        kcal: it.kcal, protein: it.protein, carbs: it.carbs, fat: it.fat
+      });
+      Store.addEntry(day, {
+        foodId: f.id, name: f.name, qty: 1,
+        amount: it.grams, unit: 'g',
+        kcal: f.kcal, protein: f.protein, carbs: f.carbs, fat: f.fat
+      });
+    });
+    plateItems = [];
+    $('plateCard').hidden = true;
+    render();
   });
 
   /* food lookup — barcode */
@@ -2957,6 +3268,8 @@
   bindSetting('stProtein', 'proteinPerLb', function (el) { var v = num(el); return v === null ? 0.8 : v; });
   bindSetting('stFat', 'fatPerLb', function (el) { var v = num(el); return v === null ? 0.35 : v; });
   bindSetting('stTargetOverride', 'targetOverride', function (el) { return num(el); });
+  bindSetting('stWaterGoal', 'waterGoalOz', function (el) { var v = num(el); return v === null ? 0 : v; });
+  bindSetting('stStepsShortcut', 'stepsShortcut', function (el) { return el.value.trim(); });
   $('stAlpha').addEventListener('input', function () {
     $('alphaVal').textContent = parseFloat($('stAlpha').value).toFixed(2);
   });

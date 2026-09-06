@@ -540,3 +540,36 @@ code {
   color: var(--text-faint); margin: var(--s-4) 0 var(--s-1);
 }
 .micro-head:first-child { margin-top: 0; }
+
+
+/* ---------- a scanned plate ----------
+
+   Confidence is shown on every row and never as a colour alone: a
+   photograph of rice deserves "low" written on it, not a subtle tint
+   that reads as decoration. */
+
+.plate-item { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--s-2); }
+.plate-item .pname { flex: 1 1 100%; font-weight: 500; }
+.plate-item .pamt { width: 74px; }
+.plate-item .pamt input {
+  width: 100%; padding: var(--s-1) var(--s-2); font: inherit; font-size: 0.8125rem;
+  background: var(--paper); color: var(--text);
+  border: var(--hairline); border-radius: var(--radius);
+}
+.plate-item .pmacro {
+  font-family: var(--font-mono); font-size: 0.75rem; color: var(--text-muted); flex: 1;
+}
+.plate-item .pkcal { font-family: var(--font-mono); font-size: 0.875rem; }
+
+.conf {
+  font-size: 0.625rem; letter-spacing: 0.06em; text-transform: uppercase;
+  padding: 1px 6px; border-radius: 999px; border: var(--hairline); color: var(--text-muted);
+}
+.conf.low { color: var(--warn); border-color: var(--warn); }
+.conf.medium { color: var(--text-muted); }
+.conf.high { color: var(--accent); border-color: var(--accent); }
+
+/* A row whose numbers came from a database rather than a guess. The
+   distinction is the whole point of allowing the swap. */
+.src { font-size: 0.625rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-faint); }
+.src.usda { color: var(--accent); }

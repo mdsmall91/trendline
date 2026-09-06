@@ -157,6 +157,10 @@ alter table public.entries add column if not exists unit   text;
 -- trade for a value nothing queries by.
 alter table public.foods   add column if not exists micros jsonb;
 
+-- Ounces of water for the day. Settings need no migration for their own
+-- new fields because they live in a jsonb blob; days are columns.
+alter table public.days    add column if not exists water double precision;
+
 -- ---------- pull cursor ----------
 -- Every read is "give me what changed since X", so this index is the
 -- one that matters.

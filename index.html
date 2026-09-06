@@ -72,6 +72,31 @@
   </div>
 
   <div class="card">
+    <div class="row" style="align-items:baseline;margin-bottom:var(--s-2)">
+      <h2 style="margin:0;flex:1">Water</h2>
+      <span class="kcal" id="waterReadout">0 / 64 oz</span>
+    </div>
+    <div class="bar" style="margin-top:0"><i id="waterBar" style="width:0%"></i></div>
+    <div class="row" style="margin-top:var(--s-3)">
+      <button class="btn grow-0" data-water="8">+8</button>
+      <button class="btn grow-0" data-water="12">+12</button>
+      <button class="btn grow-0" data-water="16">+16</button>
+      <button class="btn grow-0" data-water="24">+24</button>
+      <button class="btn ghost grow-0" data-water="-8" aria-label="Take back 8 oz">&minus;8</button>
+    </div>
+    <label class="field" style="margin-top:var(--s-3)">
+      <span class="sr">Ounces today</span>
+      <input type="range" id="waterSlider" min="0" max="128" step="4" value="0">
+    </label>
+    <div class="row">
+      <label class="field" style="margin:0"><span>Ounces today</span>
+        <input type="number" id="waterInput" inputmode="numeric" step="1" min="0"></label>
+      <button class="btn grow-0" id="saveWater">Set</button>
+    </div>
+    <div class="hint" id="waterHint"></div>
+  </div>
+
+  <div class="card">
     <h2>Food</h2>
     <!-- The box you type in comes before the list of what you already
          ate. It used to come after, which read nicely on an empty day
@@ -105,7 +130,26 @@
       <div class="hint" id="unitNote"></div>
       <div class="row" style="margin-top:var(--s-2)">
         <button class="btn grow-0" id="scanBarcode">Scan barcode</button>
+        <button class="btn grow-0" id="scanPlate">Scan a plate</button>
         <button class="btn" id="searchOnline">Look it up</button>
+        <input type="file" id="platePhoto" accept="image/*" capture="environment" hidden>
+      </div>
+
+      <!-- What came back from the photograph. Editable, and logged only
+           when the person says so: a portion read off a photo is an
+           estimate, and an estimate written straight into the calorie
+           history would quietly poison everything computed from it. -->
+      <div class="card" id="plateCard" hidden style="margin:var(--s-3) 0 0;background:var(--paper)">
+        <div class="row" style="align-items:center;margin-bottom:var(--s-2)">
+          <h2 style="margin:0;flex:1">On the plate</h2>
+          <button class="btn ghost grow-0" id="plateClose" aria-label="Close">&times;</button>
+        </div>
+        <div class="hint" id="plateStatus"></div>
+        <ul class="list" id="plateItems"></ul>
+        <div class="row" style="margin-top:var(--s-3)">
+          <button class="btn primary" id="plateLogAll">Log these</button>
+        </div>
+        <div class="hint" id="plateFooter"></div>
       </div>
       <div id="lookupPanel" hidden>
         <div class="hint" id="lookupStatus"></div>
@@ -305,8 +349,11 @@
           <input type="number" id="stepsInput" inputmode="numeric" step="100" min="0" placeholder="e.g. 8400">
         </label>
         <button class="btn grow-0" id="saveSteps">Save</button>
+        <button class="btn grow-0" id="pullSteps" aria-label="Fetch today's steps"
+                title="Fetch today's steps">&#8635;</button>
       </div>
       <div class="hint" id="stepsHint"></div>
+      <div class="hint" id="stepsPullNote"></div>
     </div>
 
     <div class="card">
@@ -550,6 +597,21 @@
   </div>
 
   <div class="card">
+    <h2>Water and steps</h2>
+    <label class="field"><span>Water goal (oz a day)</span>
+      <input type="number" id="stWaterGoal" inputmode="numeric" step="8" min="0"></label>
+    <div class="hint">64 oz is the familiar eight-glasses figure. It is a rule of thumb rather
+      than a medical target, so put whatever you actually want to hit.</div>
+    <label class="field"><span>Shortcut that fetches steps</span>
+      <input type="text" id="stStepsShortcut" autocomplete="off"
+             placeholder="e.g. Trendline Steps — leave blank if you have none"></label>
+    <div class="hint">A web app cannot read Apple Health; only a native app can, and only while
+      the phone is unlocked. The refresh button beside Steps pulls whatever Health Auto Export
+      last sent. Name a Shortcut here that runs its automation and the button will ask iOS to
+      run that first, so the number is current to the minute.</div>
+  </div>
+
+  <div class="card">
     <h2>You</h2>
     <div class="row">
       <label class="field"><span>Age</span><input type="number" id="stAge" inputmode="numeric"></label>
@@ -664,6 +726,7 @@
 <script src="js/sync.js"></script>
 <script src="js/units.js"></script>
 <script src="js/micros.js"></script>
+<script src="js/plate.js"></script>
 <script src="js/foodapi.js"></script>
 <script src="js/recipe.js"></script>
 <script src="js/scanner.js"></script>

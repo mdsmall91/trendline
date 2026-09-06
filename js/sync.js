@@ -33,7 +33,7 @@ var Sync = (function () {
   var TABLES = {
     foods:    { fields: ['id', 'name', 'serving', 'kcal', 'protein', 'carbs', 'fat', 'kind', 'servings', 'tags', 'micros'] },
     habits:   { fields: ['id', 'name', 'sort'] },
-    days:     { fields: ['id', 'weight', 'note', 'habits'] },
+    days:     { fields: ['id', 'weight', 'note', 'habits', 'water'] },
     entries:  { fields: ['id', 'date', 'foodId', 'name', 'qty', 'amount', 'unit', 'kcal', 'protein', 'carbs', 'fat'] },
     workouts: { fields: ['id', 'date', 'kind', 'activity', 'name', 'minutes', 'steps', 'kcal', 'sets', 'createdAt', 'templateId', 'finishedAt'] },
     plans:    { fields: ['id', 'kind', 'name', 'items', 'schedule', 'sourceId', 'notes'] }

@@ -60,6 +60,15 @@ var Store = (function () {
       /* Overrides the computed target when set. The formula runs
          underneath regardless, so clearing this returns to it. */
       targetOverride: null,
+      /* Ounces a day. 64 is the familiar eight-glasses figure — a rule
+         of thumb with no particular evidence behind it, which is why it
+         is a default and not a recommendation. Set it to whatever you
+         actually want to hit. */
+      waterGoalOz: 64,
+      /* The name of an iOS Shortcut that triggers Health Auto Export.
+         Empty means the steps button just pulls what has already been
+         sent, which is all a web app can do on its own. */
+      stepsShortcut: '',
       updatedAt: now(), dirty: false
     };
   }
@@ -367,6 +376,22 @@ var Store = (function () {
     d.weight = (typeof lb === 'number' && isFinite(lb) && lb > 0) ? lb : null;
     touch(d);
     save();
+  }
+
+  /* Ounces drunk today. One running total rather than a list of
+     glasses: nobody wants to audit their own hydration, they want to
+     know whether to have another one. */
+  function setWater(date, oz) {
+    var d = day(date);
+    var v = (typeof oz === 'number' && isFinite(oz) && oz >= 0) ? oz : 0;
+    d.water = Math.min(v, 500);
+    touch(d);
+    save();
+  }
+
+  function waterOn(date) {
+    var d = peekDay(date);
+    return (d && typeof d.water === 'number') ? d.water : 0;
   }
 
   function setNote(date, text) {
@@ -934,6 +959,7 @@ var Store = (function () {
     exerciseHistory: exerciseHistory, openSession: openSession,
     weightPoints: weightPoints, intakeMap: intakeMap, macroMap: macroMap, loggedDates: loggedDates,
     setWeight: setWeight, setNote: setNote, setHabit: setHabit,
+    setWater: setWater, waterOn: waterOn,
     addEntry: addEntry, updateEntry: updateEntry, entry: entry, removeEntry: removeEntry,
     addFood: addFood, food: food, removeFood: removeFood, findFoodByName: findFoodByName,
     allTags: allTags, cleanTags: cleanTags,

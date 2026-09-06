@@ -221,6 +221,30 @@ target is a shortfall and 40% of the sodium ceiling is a good day.
 Total sugars gets no percentage at all: the Daily Value is for *added*
 sugar, and scoring one against the other marks fruit as a failure.
 
+**3e. Scan a plate.** Photograph a meal and get a list of what is
+probably on it, with probable amounts.
+
+A model reading a photograph identifies foods well and weighs them
+badly — there is no scale in the picture, so the difference between
+120 g and 200 g of rice is a centimetre of mound height a photograph
+does not resolve. So every row carries a confidence, nothing is ever
+logged without confirmation, and any row can be **looked up** in USDA
+at its estimated weight.
+
+That last part is the design. The model is good at "that is a chicken
+thigh, about 140 g"; a database is good at "140 g of chicken thigh
+contains this". Each does the half it is good at, and the confidence
+stays where it was after a lookup — the database fixed what is *in* the
+food and knows nothing about how much was on the plate.
+
+Needs an Anthropic API key in the Supabase secrets; a cent or two a
+scan. See `supabase/functions/README.md`.
+
+**3f. Water.** Ounces against a goal, with quick +8/+12/+16/+24
+buttons, a slider and a box. The goal lives in Setup and defaults to
+64 oz — the familiar eight-glasses figure, which is a rule of thumb
+rather than a medical target, and the app says so.
+
 **4. Habits.** Daily checkboxes with streaks and a 30-day grid. Streaks
 tolerate an unlogged today, because a streak that breaks at 00:01 every
 morning trains you to stop looking at it.
@@ -330,6 +354,8 @@ js/units.js             which units a food can honestly be measured in, and
                         the conversions. Refuses what it cannot justify.
 js/micros.js            micronutrient targets, and the coverage that says
                         how much of a day each figure was computed from
+js/plate.js             reads a photographed meal into an editable list.
+                        Estimates, labelled as such, logged only on request
 js/scanner.js           camera barcode scanning, wrapping the vendored lib
 js/gym.js               exercise catalog: search, substitution, selectable loads
 js/chart.js             hand-rolled SVG. No charting library.
@@ -344,14 +370,16 @@ data/                   exercise catalog, session templates, this gym's
 supabase/schema.sql     tables, indexes, RLS policies
 supabase/steps-ingest.sql  write-only token + function for the
                         iOS Shortcut that posts daily steps
-supabase/functions/     the only two things a browser may not do:
+supabase/functions/     the things a browser may not do:
                           recipe/  fetch another site's page
                           health/  receive Health Auto Export's steps
-                        Neither holds a key. See its README.
+                          plate/   read a meal photo, holding the key
+                                   that must not ship in a web app
+                        See its README.
 SETUP.md                Supabase walkthrough
 STEPS-SHORTCUT.md       Garmin steps into the log, by hand-built Shortcut
 HEALTH-EXPORT.md        the same thing, via Health Auto Export
-tests/                  699 assertions
+tests/                  743 assertions
 ```
 
 ## Tests
@@ -365,6 +393,7 @@ node tests/progress-tests.js #  77 — e1RM, RIR, load selection, the rules
 node tests/recipe-tests.js   # 100 — recipe reading, against four real pages
 node tests/units-tests.js    #  63 — unit conversion, and what it refuses
 node tests/micro-tests.js    #  69 — micronutrients, units, and coverage
+node tests/plate-tests.js    #  44 — reading a photographed meal, and what it drops
 ```
 
 Or open any of the `tests/*.html` pages in a browser, which is the only
