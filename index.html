@@ -95,6 +95,13 @@
         </label>
         <button class="btn primary grow-0" id="addFoodLine">Add</button>
       </div>
+      <!-- Shown when a unit is picked that the food does not yet know
+           how to answer. Asking once is better than refusing forever. -->
+      <div class="row" id="unitLearn" hidden style="margin-top:var(--s-2)">
+        <label class="field" style="margin:0"><span id="unitLearnLabel">One serving is</span>
+          <input type="text" id="unitLearnValue" inputmode="decimal" placeholder="226"></label>
+        <button class="btn primary grow-0" id="unitLearnSave">Save</button>
+      </div>
       <div class="hint" id="unitNote"></div>
       <div class="row" style="margin-top:var(--s-2)">
         <button class="btn grow-0" id="scanBarcode">Scan barcode</button>
@@ -138,6 +145,8 @@
            act was the confusing part. -->
       <div class="card" id="inlineNew" hidden style="margin:var(--s-3) 0 0;background:var(--paper)">
         <h2>New &mdash; <span id="inlineName"></span></h2>
+        <label class="field"><span>One serving is</span>
+          <input type="text" id="inServing" placeholder="1 cup, 226 g, 2 tbsp — or leave blank"></label>
         <div class="row">
           <label class="field"><span>Cal</span><input type="number" id="inKcal" inputmode="numeric"></label>
           <label class="field"><span>P (g)</span><input type="number" id="inP" inputmode="decimal"></label>

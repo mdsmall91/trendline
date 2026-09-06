@@ -14,7 +14,7 @@
   /* Bumped by hand on each deploy, and shown under Setup → Version.
      Its only job is to let "it still looks old" be answered with a
      number instead of a guess. Keep it in step with CACHE in sw.js. */
-  var BUILD = '2026-09-06.19';
+  var BUILD = '2026-09-06.20';
   var day = WL.todayKey();
   var range = 30;
   var foodFilterText = '';
@@ -1147,7 +1147,14 @@
     var qty = num(perGram ? $('feQtyG') : $('feQty'));
     if (qty === null || qty <= 0) qty = 1;
     var grams = perGram ? num($('feGrams')) : null;
-    var serving = grams ? grams + ' g' : rec.serving;
+    /* Keep the gram weight the source stated, even when the amount was
+       not edited. Dropping it is why a scanned tub could not be logged
+       in ounces the next day: the label said "1 cup", the database knew
+       it was 226 g, and only the label survived. */
+    var serving = grams ? grams + ' g'
+      : (rec.servingGrams && rec.serving && !Units.basisFor(rec).mass
+          ? rec.serving + ' (' + Math.round(rec.servingGrams) + ' g)'
+          : rec.serving);
 
     /* The library entry is keyed by name, so re-scanning the same
        product finds it again. When the amount has been changed, the
@@ -1557,27 +1564,69 @@
     return Store.findFoodByName($('foodPick').value.trim());
   }
 
+  /* Every unit is offered, always. An earlier version listed only the
+     ones a food could already justify, which was honest and useless:
+     most foods are typed in by hand with no serving description at all,
+     so the list collapsed to "servings" and stayed there, with nothing
+     on screen suggesting a way out.
+
+     Refusing to guess is still the rule. But there is a third option
+     between guessing and refusing, and it is the obvious one: ask.
+     Choose grams for a food that has never been weighed and it asks
+     what one serving weighs, once, and knows from then on. */
+  var ALL_UNITS = ['serving', 'g', 'oz', 'cup', 'tbsp', 'tsp'];
+
   function refreshUnits() {
     var f = currentFood();
-    var opts = Units.unitsFor(f || {});
-    /* Keep the chosen unit if it survives the change of food. Resetting
-       to servings every keystroke would fight anyone typing a name
-       after picking a unit. */
-    if (opts.indexOf(unitChoice) < 0) unitChoice = 'serving';
-    $('foodUnit').innerHTML = opts.map(function (u) {
+    if (ALL_UNITS.indexOf(unitChoice) < 0) unitChoice = 'serving';
+    $('foodUnit').innerHTML = ALL_UNITS.map(function (u) {
+      /* An ellipsis marks a unit that will ask a question first, so the
+         question is not a surprise. */
+      var known = !f || Units.servingsPerUnit(f, u) !== null;
       return '<option value="' + u + '"' + (u === unitChoice ? ' selected' : '') + '>' +
-        esc(Units.label(u)) + '</option>';
+        esc(Units.label(u)) + (known ? '' : ' \u2026') + '</option>';
     }).join('');
 
-    /* Say why the list is short, rather than leaving it looking broken.
-       "This food only knows servings" is a fact about the food. */
-    var note = '';
-    if (f && opts.length === 1) {
-      note = f.name + ' is stored as "' + (f.serving || '1 serving') +
-        '", which gives no weight or volume to convert from — so servings only. ' +
-        'Edit it in Foods to add one.';
+    var needs = (f && Units.servingsPerUnit(f, unitChoice) === null) ? unitChoice : null;
+    $('unitLearn').hidden = !needs;
+    $('unitNote').textContent = '';
+
+    if (needs) {
+      var asMass = (needs === 'g' || needs === 'oz');
+      $('unitLearnLabel').textContent = asMass
+        ? 'One serving of ' + f.name + ' weighs, in grams'
+        : 'One serving of ' + f.name + ' is, in cups';
+      $('unitLearnValue').placeholder = asMass ? '226' : '0.5';
+      $('unitLearnValue').value = '';
+      $('unitNote').textContent = asMass
+        ? 'It is on the tub, next to the serving size. Once it is in, grams and ounces both work.'
+        : 'Roughly what fraction of a cup one serving fills. Tablespoons and teaspoons follow from it.';
+    } else if (f && !Units.basisFor(f).mass && !Units.basisFor(f).volumeMl) {
+      $('unitNote').textContent = f.name + ' has no weight or volume recorded yet. ' +
+        'Choose grams or cups above and it will ask for one.';
     }
-    $('unitNote').textContent = note;
+  }
+
+  /* Fold the answer into the serving text rather than adding a field.
+     "1 cup (226 g)" is both a description a person can read and the
+     exact form js/units.js already parses, so one string carries the
+     label and the basis with no schema change and no migration. */
+  function learnUnitBasis() {
+    var f = currentFood();
+    if (!f) return;
+    var v = Units.parseAmount($('unitLearnValue').value);
+    if (v === null || v <= 0) { $('unitLearnValue').focus(); return; }
+
+    var asMass = (unitChoice === 'g' || unitChoice === 'oz');
+    var label = String(f.serving || '').trim();
+    var addition = asMass ? v + ' g' : v + ' cup';
+    Store.addFood({
+      id: f.id, name: f.name,
+      serving: label ? label + ' (' + addition + ')' : addition,
+      kcal: f.kcal, protein: f.protein, carbs: f.carbs, fat: f.fat
+    });
+    refreshUnits();
+    $('foodAmount').focus();
   }
 
   function addFoodLine() {
@@ -1588,7 +1637,7 @@
     if (!f) {
       $('inlineName').textContent = name;
       $('inlineNew').hidden = false;
-      ['inKcal', 'inP', 'inC', 'inF'].forEach(function (id) { $(id).value = ''; });
+      ['inServing', 'inKcal', 'inP', 'inC', 'inF'].forEach(function (id) { $(id).value = ''; });
       $('inKcal').focus();
       return;
     }
@@ -1620,6 +1669,11 @@
   $('addFoodLine').addEventListener('click', addFoodLine);
   $('foodUnit').addEventListener('change', function () {
     unitChoice = $('foodUnit').value;
+    refreshUnits();
+  });
+  $('unitLearnSave').addEventListener('click', learnUnitBasis);
+  $('unitLearnValue').addEventListener('keydown', function (ev) {
+    if (ev.key === 'Enter') { ev.preventDefault(); learnUnitBasis(); }
   });
   $('foodPick').addEventListener('keydown', function (ev) {
     if (ev.key === 'Enter') { ev.preventDefault(); addFoodLine(); }
@@ -1680,7 +1734,12 @@
 
     if (save) {
       var f = Store.addFood({
-        name: name, serving: '',
+        /* Whatever they said a serving is. Blank is fine and costs
+           nothing now, because the unit picker asks when it needs to —
+           but every food saved with a blank serving used to be stuck on
+           servings forever, which is how cottage cheese ended up
+           impossible to log in ounces. */
+        name: name, serving: $('inServing').value.trim(),
         kcal: vals.kcal, protein: vals.protein, carbs: vals.carbs, fat: vals.fat
       });
       Store.addEntry(day, {
@@ -1695,7 +1754,7 @@
       });
     }
 
-    ['inKcal', 'inP', 'inC', 'inF'].forEach(function (id) { $(id).value = ''; });
+    ['inServing', 'inKcal', 'inP', 'inC', 'inF'].forEach(function (id) { $(id).value = ''; });
     $('inlineNew').hidden = true;
     $('foodPick').value = ''; $('foodAmount').value = '1';
     unitChoice = 'serving';
