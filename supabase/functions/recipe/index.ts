@@ -22,9 +22,15 @@
 // from inside Supabase's network, including to addresses only
 // reachable from there. Three things prevent that.
 //
-//   1. It requires a signed-in Trendline account. Deployed with JWT
-//      verification on (the default), Supabase rejects the call
-//      before this code runs.
+//   1. It requires a signed-in Trendline account. The check is done
+//      here rather than by the platform's verify_jwt flag, because
+//      that flag also rejects the browser's CORS preflight — which
+//      cannot carry an Authorization header, by specification — and a
+//      rejected preflight means the app never gets to make the real
+//      call at all. So: deployed with verification off, and the token
+//      checked against the auth server on the line marked below.
+//      Same guarantee, minus a failure mode that looks like a CORS
+//      bug and isn't.
 //   2. It refuses private and loopback addresses — and it re-checks
 //      after EVERY redirect, because a public URL that redirects to
 //      169.254.169.254 is the standard way around a check done only
@@ -33,7 +39,7 @@
 //      seconds, so a hostile page cannot hold a worker open or fill
 //      its memory.
 //
-// Deploy:  supabase functions deploy recipe
+// Deploy:  supabase functions deploy recipe --no-verify-jwt
 // =============================================================
 
 const MAX_BYTES = 3_000_000;      // a fat recipe page is ~700 KB
@@ -68,7 +74,7 @@ function json(body: unknown, status = 200): Response {
 // runs before the request and DNS is not available to it. That leaves
 // one gap — a public hostname whose DNS record points at a private
 // address — which the redirect re-check does not close either. The
-// honest summary is that this stops the easy cases and the JWT
+// honest summary is that this stops the easy cases and the sign-in
 // requirement stops the rest: an attacker needs an account on this
 // project first, and the only account is mine.
 // ---------------------------------------------------------------
@@ -211,9 +217,36 @@ function extractTitle(html: string): string | null {
 
 // ---------------------------------------------------------------
 
+// Who is asking. The token is handed to the auth server rather than
+// decoded here: verifying a signature by hand is exactly the kind of
+// security code that is easy to write and easy to write wrongly, and
+// the service whose keys signed it is one request away.
+async function isSignedIn(req: Request): Promise<boolean> {
+  const auth = req.headers.get('authorization') || '';
+  if (!/^Bearer\s+\S+/i.test(auth)) return false;
+  const base = Deno.env.get('SUPABASE_URL') ?? '';
+  const key = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
+  if (!base || !key) return false;
+  try {
+    const res = await fetch(`${base}/auth/v1/user`, {
+      headers: { 'Authorization': auth, 'apikey': key },
+    });
+    await res.body?.cancel();
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 Deno.serve(async (req: Request) => {
+  // The preflight is answered before anything else and without
+  // authentication, because a browser cannot attach credentials to it.
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
   if (req.method !== 'POST') return json({ error: 'POST a { url }.' }, 405);
+
+  if (!await isSignedIn(req)) {
+    return json({ error: 'Sign in to Trendline first.' }, 401);
+  }
 
   let target: URL;
   try {

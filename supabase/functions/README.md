@@ -33,15 +33,17 @@ supabase link --project-ref mmwymuxutgmwfmvkvxzw
 ```
 
 ```bash
-supabase functions deploy recipe
+supabase functions deploy recipe --no-verify-jwt
 ```
 
 ```bash
 supabase functions deploy health --no-verify-jwt
 ```
 
-**The `--no-verify-jwt` on the second one is not optional and not laziness.**
-See "Why the two are secured differently" below.
+**The `--no-verify-jwt` is not laziness, and it does not mean unauthenticated.**
+Both functions check their caller themselves. See "Why the two are secured
+differently" below — the short version is that the platform flag also rejects
+the browser's CORS preflight, which by specification cannot carry credentials.
 
 To check they arrived:
 
@@ -60,8 +62,8 @@ Two things to watch if you go this way:
 - `health` imports `parse.js` from the folder next to it. In the dashboard
   editor, create that second file with the same name before deploying, or the
   function will fail to boot.
-- The editor has a **Verify JWT** toggle. Leave it **on** for `recipe`. Turn it
-  **off** for `health`.
+- The editor has a **Verify JWT** toggle. Turn it **off** for both. Each
+  function does its own checking; see below.
 
 ---
 
@@ -71,12 +73,22 @@ This looks inconsistent and isn't.
 
 **`recipe` requires a signed-in account.** It fetches arbitrary URLs, and an
 open endpoint that does that is a gift to anyone who finds it — they get to make
-requests that appear to come from inside Supabase's network. Requiring a JWT
-means the caller has an account on this project, and the only account is yours.
+requests that appear to come from inside Supabase's network. So it hands the
+caller's token to the auth server and refuses anything that comes back
+unrecognised. The caller has an account on this project, and the only account is
+yours.
+
+That check is inside the function rather than the platform's `verify_jwt` flag
+for one specific reason: the flag also rejects the browser's CORS preflight,
+which cannot carry an `Authorization` header by specification. With the flag on,
+the app never gets as far as making the real request — and the failure surfaces
+as a CORS error, which sends you looking in entirely the wrong place. Same
+guarantee, minus a trap.
+
 It also refuses private and loopback addresses, re-checks after every redirect,
 caps what it reads, and gives up after twelve seconds.
 
-**`health` cannot require one.** Health Auto Export posts JSON to a URL on a
+**`health` cannot require an account at all.** Health Auto Export posts JSON to a URL on a
 schedule; it has no way to sign in to Supabase, hold a session, or refresh a
 token. So it authenticates on the ingest token instead — the same token the iOS
 Shortcut uses, checked inside the database by `ingest_steps`.
