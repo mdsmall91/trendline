@@ -94,11 +94,12 @@ Deno.serve(async (req: Request) => {
 
   // A liveness answer for anything that just wants to know the address
   // is real. Health Auto Export checks a URL before it will save it,
-  // and this endpoint used to fail that check twice over: GET returned
-  // 405, and HEAD hung outright. Both present to the person typing it
-  // as "invalid URL", which is a maddening thing to be told about an
-  // address that works perfectly for the one request it exists to
-  // serve. Answering a probe costs nothing and does nothing.
+  // and this endpoint used to answer that check with 405 — for both
+  // GET and HEAD, the HEAD slowly enough to look like no answer at
+  // all. Either way it presents to the person typing it as "invalid
+  // URL", which is a maddening thing to be told about an address that
+  // works perfectly for the one request it exists to serve. Answering
+  // a probe costs nothing and does nothing.
   if (req.method === 'GET' || req.method === 'HEAD') {
     return new Response(
       req.method === 'HEAD' ? null : JSON.stringify({
