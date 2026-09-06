@@ -91,6 +91,25 @@ async function writeDay(
 
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
+
+  // A liveness answer for anything that just wants to know the address
+  // is real. Health Auto Export checks a URL before it will save it,
+  // and this endpoint used to fail that check twice over: GET returned
+  // 405, and HEAD hung outright. Both present to the person typing it
+  // as "invalid URL", which is a maddening thing to be told about an
+  // address that works perfectly for the one request it exists to
+  // serve. Answering a probe costs nothing and does nothing.
+  if (req.method === 'GET' || req.method === 'HEAD') {
+    return new Response(
+      req.method === 'HEAD' ? null : JSON.stringify({
+        ok: true,
+        service: 'trendline-health-ingest',
+        expects: 'POST a Health Auto Export payload, with an ingest token',
+      }),
+      { status: 200, headers: { ...CORS, 'Content-Type': 'application/json' } },
+    );
+  }
+
   if (req.method !== 'POST') {
     return json({ error: 'POST a Health Auto Export payload.' }, 405);
   }
