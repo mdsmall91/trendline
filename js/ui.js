@@ -14,7 +14,7 @@
   /* Bumped by hand on each deploy, and shown under Setup → Version.
      Its only job is to let "it still looks old" be answered with a
      number instead of a guess. Keep it in step with CACHE in sw.js. */
-  var BUILD = '2026-09-06.21';
+  var BUILD = '2026-09-06.22';
   var day = WL.todayKey();
   var range = 30;
   var foodFilterText = '';
@@ -1135,53 +1135,138 @@
 
   function feSet(id, v) { $(id).value = (v === null || v === undefined) ? '' : v; }
 
-  function openFoodEditForResult(rec) {
-    editing = { mode: 'new', rec: rec };
-    var perGram = !!(rec.per100g && rec.per100g.kcal !== null);
-    $('feTitle').textContent = rec.name;
-    $('feGramsRow').hidden = !perGram;
-    $('feQtyRow').hidden = perGram;
+  /* ---------------------------------------------------------------
+     THE AMOUNT EDITOR
 
-    if (perGram) {
-      feSet('feGrams', rec.servingGrams || 100);
-      feSet('feQtyG', 1);
-    } else {
-      feSet('feQty', Units.parseAmount($('foodAmount').value) || 1);
+     One control, the same one as the main food row: a number and a
+     unit.
+
+     It used to be a grams box with no unit beside it, which meant
+     anything looked up from USDA — and USDA states everything per
+     100 g — opened at 100 g and could not be moved off grams at all.
+     Eat four ounces of chicken and you had to do the conversion in
+     your head, which is the arithmetic this app exists to do.
+     --------------------------------------------------------------- */
+
+  var feUnitChoice = 'serving';
+
+  function feBase() { return editing ? editing.base : null; }
+
+  function round0(v) { return (v === null || v === undefined) ? null : Math.round(v); }
+  function round1(v) { return (v === null || v === undefined) ? null : Math.round(v * 10) / 10; }
+
+  function feRenderUnits() {
+    var b = feBase();
+    if (ALL_UNITS.indexOf(feUnitChoice) < 0) feUnitChoice = 'serving';
+    $('feUnit').innerHTML = ALL_UNITS.map(function (u) {
+      var known = !b || Units.servingsPerUnit(b, u) !== null;
+      return '<option value="' + u + '"' + (u === feUnitChoice ? ' selected' : '') + '>' +
+        esc(Units.label(u)) + (known ? '' : ' \u2026') + '</option>';
+    }).join('');
+
+    var needs = (b && Units.servingsPerUnit(b, feUnitChoice) === null) ? feUnitChoice : null;
+    $('feLearn').hidden = !needs;
+    if (needs) {
+      var asMass = (needs === 'g' || needs === 'oz');
+      $('feLearnLabel').textContent = asMass
+        ? 'One serving weighs, in grams' : 'One serving is, in cups';
+      $('feLearnValue').value = '';
+      $('feLearnValue').placeholder = asMass ? '226' : '0.5';
     }
-    feSet('feKcal', rec.kcal); feSet('feP', rec.protein);
-    feSet('feC', rec.carbs); feSet('feF', rec.fat);
+  }
+
+  /* Scale the source figures to the amount showing. They stay editable
+     afterwards: the numbers are a starting point, and a label that
+     disagrees with a database is the label's problem, not yours. */
+  function feRecompute() {
+    var b = feBase();
+    if (!b) return;
+    var servings = Units.toServings($('feAmount').value, feUnitChoice, b);
+    if (servings === null) return;
+    function s(v) { return (v === null || v === undefined) ? null : v * servings; }
+    feSet('feKcal', round0(s(b.kcal)));
+    feSet('feP', round1(s(b.protein)));
+    feSet('feC', round1(s(b.carbs)));
+    feSet('feF', round1(s(b.fat)));
+  }
+
+  function feLearnBasis() {
+    var b = feBase();
+    if (!b) return;
+    var v = Units.parseAmount($('feLearnValue').value);
+    if (v === null || v <= 0) { $('feLearnValue').focus(); return; }
+    var asMass = (feUnitChoice === 'g' || feUnitChoice === 'oz');
+    var label = String(b.serving || '').trim();
+    var addition = asMass ? v + ' g' : v + ' cup';
+    /* The working copy only. Nothing is saved until Log it, and a
+       serving weight learned for a food that is then cancelled should
+       not outlive the cancel. */
+    b.serving = label ? label + ' (' + addition + ')' : addition;
+    if (asMass) b.servingGrams = v;
+    feRenderUnits();
+    feRecompute();
+    $('feAmount').focus();
+  }
+
+  function openFoodEditForResult(rec) {
+    var b = {
+      name: rec.name, serving: rec.serving, servingGrams: rec.servingGrams || null,
+      kcal: rec.kcal, protein: rec.protein, carbs: rec.carbs, fat: rec.fat,
+      micros: rec.micros || null
+    };
+    editing = { mode: 'new', rec: rec, base: b };
+    feUnitChoice = Units.basisFor(b).mass ? 'g' : 'serving';
+
+    $('feTitle').textContent = rec.name;
+    $('feAmount').value = feUnitChoice === 'g'
+      ? String(Math.round(Units.basisFor(b).mass))
+      : String(Units.parseAmount($('foodAmount').value) || 1);
+
+    feRenderUnits();
+    feRecompute();
 
     $('feSave').textContent = 'Log it';
-    $('feHint').textContent = perGram
-      ? 'Stated as ' + rec.serving + '. Change the grams and the numbers follow; ' +
-        'or type over any of them.'
-      : 'Serving: ' + rec.serving + '. Change anything that looks wrong before logging it.';
+    $('feHint').textContent = 'Stated as ' + (rec.serving || '1 serving') +
+      '. Change the amount or the unit and the numbers follow \u2014 or type over any of them.' +
+      (rec.micros ? ' Micronutrients came with it.' : '');
     $('foodEdit').hidden = false;
     revealFoodEdit();
-    (perGram ? $('feGrams') : $('feQty')).focus();
+    $('feAmount').focus();
+    $('feAmount').select();
   }
 
   function openFoodEditForEntry(id) {
     var e = Store.entry(id);
     if (!e) return;
-    editing = { mode: 'entry', id: id };
+    /* The food behind the line is what knows how to convert units. A
+       quick add has none, so it stays in servings — which is honest:
+       nobody weighed it. */
+    var f = e.foodId ? Store.food(e.foodId) : null;
+    editing = {
+      mode: 'entry', id: id,
+      base: {
+        name: e.name, serving: f ? f.serving : '', servingGrams: null,
+        kcal: e.kcal, protein: e.protein, carbs: e.carbs, fat: e.fat,
+        micros: f ? f.micros : null
+      }
+    };
+    feUnitChoice = e.unit || 'serving';
     $('feTitle').textContent = e.name || 'Logged food';
-    $('feGramsRow').hidden = true;
-    $('feQtyRow').hidden = false;
-    /* Blanked as well as hidden. A stale 30g sitting in a row that is
-       supposed to be gone is exactly what made this confusing, and
-       belt-and-braces costs two lines. */
-    feSet('feGrams', ''); feSet('feQtyG', '');
-    feSet('feQty', typeof e.qty === 'number' ? e.qty : 1);
-    feSet('feKcal', e.kcal); feSet('feP', e.protein);
-    feSet('feC', e.carbs); feSet('feF', e.fat);
+    $('feAmount').value = String(
+      (typeof e.amount === 'number' && e.amount > 0) ? e.amount
+        : (typeof e.qty === 'number' ? e.qty : 1));
+
+    feRenderUnits();
+    feRecompute();
+
     $('feSave').textContent = 'Save';
-    $('feHint').textContent = 'These are the numbers for ONE serving. The log multiplies them ' +
-      'by the servings above.';
+    $('feHint').textContent = 'Change the amount or the unit and the numbers follow. ' +
+      'Type over any of them to correct what was logged.';
     $('foodEdit').hidden = false;
     lookup.open = false; renderLookup();
     revealFoodEdit();
-    $('feKcal').focus();
+    $('feAmount').focus();
+    $('feAmount').select();
   }
 
   /* Opened from a row further up the log, the panel can land off-screen
@@ -1196,30 +1281,38 @@
     $('foodEdit').hidden = true;
   }
 
-  /* Grams changed: rescale from the per-100g basis the source gave us.
-     Only ever applies in 'new' mode, because a logged entry no longer
-     carries a per-100g basis to rescale from. */
-  function feRescale() {
-    if (!editing || editing.mode !== 'new') return;
-    var g = num($('feGrams'));
-    var scaled = FoodAPI.atGrams(editing.rec, g);
-    if (!scaled) return;
-    feSet('feKcal', scaled.kcal); feSet('feP', scaled.protein);
-    feSet('feC', scaled.carbs); feSet('feF', scaled.fat);
-  }
-
   function saveFoodEdit() {
     if (!editing) return;
+    var b = editing.base;
 
-    var vals = {
+    /* The macro boxes show the numbers for the amount on screen, not
+       for one serving. So whatever is in them — computed or typed over
+       — divides back down before anything is stored, and the library
+       keeps one canonical per-serving record however much was eaten.
+
+       That is what retires the old duplicate-food problem: eating 150 g
+       of chicken used to create a SECOND library entry called "Chicken
+       breast (150 g)" beside the first, because the food record was the
+       only place an amount could live. The entry carries the amount
+       now, so the library holds foods and the log holds meals. */
+    var amount = Units.parseAmount($('feAmount').value);
+    if (amount === null || amount <= 0) amount = 1;
+    var servings = Units.toServings(amount, feUnitChoice, b);
+    if (servings === null || servings <= 0) servings = amount;
+
+    var shown = {
       kcal: num($('feKcal')), protein: num($('feP')),
       carbs: num($('feC')), fat: num($('feF'))
     };
+    function per(v) { return (v === null || v === undefined) ? null : v / servings; }
+    var vals = {
+      kcal: per(shown.kcal), protein: per(shown.protein),
+      carbs: per(shown.carbs), fat: per(shown.fat)
+    };
 
     if (editing.mode === 'entry') {
-      var q = num($('feQty'));
       Store.updateEntry(editing.id, {
-        qty: (q === null || q <= 0) ? 1 : q,
+        qty: servings, amount: amount, unit: feUnitChoice,
         kcal: vals.kcal, protein: vals.protein, carbs: vals.carbs, fat: vals.fat
       });
       closeFoodEdit();
@@ -1228,56 +1321,26 @@
     }
 
     var rec = editing.rec;
-    var perGram = !$('feGramsRow').hidden;
-    var qty = num(perGram ? $('feQtyG') : $('feQty'));
-    if (qty === null || qty <= 0) qty = 1;
-    var grams = perGram ? num($('feGrams')) : null;
-    /* Keep the gram weight the source stated, even when the amount was
-       not edited. Dropping it is why a scanned tub could not be logged
-       in ounces the next day: the label said "1 cup", the database knew
-       it was 226 g, and only the label survived. */
-    var serving = grams ? grams + ' g'
-      : (rec.servingGrams && rec.serving && !Units.basisFor(rec).mass
-          ? rec.serving + ' (' + Math.round(rec.servingGrams) + ' g)'
-          : rec.serving);
-
-    /* The library entry is keyed by name, so re-scanning the same
-       product finds it again. When the amount has been changed, the
-       name carries it — "Chicken breast (150 g)" and the same food at
-       100g are different servings and must not overwrite each other. */
-    var name = rec.name;
-    if (grams && rec.servingGrams && Math.abs(grams - rec.servingGrams) > 0.5) {
-      name = rec.name + ' (' + grams + ' g)';
+    /* Keep the gram weight the source stated even when the amount was
+       not touched, so the food can be logged in ounces tomorrow. */
+    var serving = b.serving;
+    if (rec.servingGrams && serving && !Units.basisFor(b).mass) {
+      serving = serving + ' (' + Math.round(rec.servingGrams) + ' g)';
     }
 
-    /* The micro panel follows the same weight the macros were taken at.
-       Editing 100 g down to 30 g has to move the sodium with it, or the
-       food quietly claims a full serving's worth of everything nobody
-       looked at. */
-    var panel = rec.micros || null;
-    if (grams && rec.micros100g && typeof Micros !== 'undefined') {
-      panel = Micros.scale(rec.micros100g, grams / 100);
-    }
-
-    var existing = Store.findFoodByName(name);
-    var f = existing
-      ? Store.addFood({
-          id: existing.id, name: name, serving: serving, micros: panel,
-          kcal: vals.kcal, protein: vals.protein, carbs: vals.carbs, fat: vals.fat
-        })
-      : Store.addFood({
-          name: name, serving: serving, micros: panel,
-          kcal: vals.kcal, protein: vals.protein, carbs: vals.carbs, fat: vals.fat
-        });
+    var existing = Store.findFoodByName(b.name);
+    var f = Store.addFood({
+      id: existing ? existing.id : undefined,
+      name: b.name, serving: serving, micros: b.micros || null,
+      kcal: vals.kcal, protein: vals.protein, carbs: vals.carbs, fat: vals.fat
+    });
 
     Store.addEntry(day, {
-      foodId: f.id, name: f.name, qty: qty,
-      /* The amount editor works in servings or in grams, and says which
-         in its own fields; recording it keeps the day's list reading
-         the same way as everything else logged. */
-      amount: grams ? grams : qty, unit: grams ? 'g' : 'serving',
+      foodId: f.id, name: f.name, qty: servings,
+      amount: amount, unit: feUnitChoice,
       kcal: f.kcal, protein: f.protein, carbs: f.carbs, fat: f.fat
     });
+
     $('foodPick').value = '';
     $('foodAmount').value = '1';
     unitChoice = 'serving';
@@ -1286,7 +1349,6 @@
     closeLookup();
     render();
   }
-
   /* ---------------------------------------------------------------
      ACCOUNT / SYNC
      --------------------------------------------------------------- */
@@ -1862,6 +1924,20 @@
   $('inSave').addEventListener('click', function () { finishNew(true); });
   $('inOnce').addEventListener('click', function () { finishNew(false); });
   $('inCancel').addEventListener('click', function () { $('inlineNew').hidden = true; });
+
+  /* Typing macros by hand gets calories and nothing else: no vitamins,
+     no minerals, and a food that drags the micronutrient coverage down
+     every time it is eaten. Both routes that bring a full panel with
+     them belong right here, where the choice is actually made. */
+  $('inLookup').addEventListener('click', function () {
+    $('inlineNew').hidden = true;
+    $('foodPick').value = $('inlineName').textContent;
+    $('searchOnline').click();
+  });
+  $('inScan').addEventListener('click', function () {
+    $('inlineNew').hidden = true;
+    openScanner();
+  });
   $('inlineNew').addEventListener('keydown', function (ev) {
     if (ev.key === 'Enter') { ev.preventDefault(); finishNew(true); }
   });
@@ -2460,7 +2536,16 @@
   });
 
   /* amount editor */
-  $('feGrams').addEventListener('input', feRescale);
+  $('feAmount').addEventListener('input', feRecompute);
+  $('feUnit').addEventListener('change', function () {
+    feUnitChoice = $('feUnit').value;
+    feRenderUnits();
+    feRecompute();
+  });
+  $('feLearnSave').addEventListener('click', feLearnBasis);
+  $('feLearnValue').addEventListener('keydown', function (ev) {
+    if (ev.key === 'Enter') { ev.preventDefault(); feLearnBasis(); }
+  });
   $('feSave').addEventListener('click', saveFoodEdit);
   $('feCancel').addEventListener('click', closeFoodEdit);
   $('foodEdit').addEventListener('keydown', function (ev) {

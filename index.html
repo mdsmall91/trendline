@@ -113,15 +113,19 @@
       </div>
       <div class="card" id="foodEdit" hidden style="margin:var(--s-3) 0 0;background:var(--paper)">
         <h2 id="feTitle">Amount</h2>
-        <div class="row" id="feGramsRow" hidden>
-          <label class="field" style="margin:0"><span>Amount (g)</span>
-            <input type="number" id="feGrams" inputmode="decimal" step="1" min="0"></label>
-          <label class="field grow-0" style="margin:0;width:96px"><span>Servings</span>
-            <input type="number" id="feQtyG" inputmode="decimal" step="0.25" min="0" value="1"></label>
+        <!-- The same amount-and-unit control as the main food row, on
+             purpose. This card used to be a grams box with no unit at
+             all, so anything looked up from USDA was stuck at 100 g. -->
+        <div class="row">
+          <label class="field grow-0" style="margin:0;width:92px"><span>How much</span>
+            <input type="text" id="feAmount" inputmode="decimal" value="1"></label>
+          <label class="field" style="margin:0"><span>Unit</span>
+            <select id="feUnit"></select></label>
         </div>
-        <div class="row" id="feQtyRow">
-          <label class="field" style="margin:0"><span>Servings</span>
-            <input type="number" id="feQty" inputmode="decimal" step="0.25" min="0"></label>
+        <div class="row" id="feLearn" hidden style="margin-top:var(--s-2)">
+          <label class="field" style="margin:0"><span id="feLearnLabel">One serving is</span>
+            <input type="text" id="feLearnValue" inputmode="decimal"></label>
+          <button class="btn primary grow-0" id="feLearnSave">Save</button>
         </div>
         <div class="row">
           <label class="field"><span>Cal</span><input type="number" id="feKcal" inputmode="numeric"></label>
@@ -152,6 +156,15 @@
           <label class="field"><span>P (g)</span><input type="number" id="inP" inputmode="decimal"></label>
           <label class="field"><span>C (g)</span><input type="number" id="inC" inputmode="decimal"></label>
           <label class="field"><span>F (g)</span><input type="number" id="inF" inputmode="decimal"></label>
+        </div>
+        <!-- Typing macros by hand gets you calories and nothing else:
+             no vitamins, no minerals, and a food that drags the
+             micronutrient coverage down every time you eat it. Both
+             routes that bring a full panel with them belong here, at
+             the moment the choice is actually being made. -->
+        <div class="row" style="margin-bottom:var(--s-2)">
+          <button class="btn" id="inLookup">Look it up instead</button>
+          <button class="btn grow-0" id="inScan">Scan barcode</button>
         </div>
         <div class="row">
           <button class="btn primary" id="inSave">Save &amp; log it</button>

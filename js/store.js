@@ -414,7 +414,11 @@ var Store = (function () {
     var s = load();
     var e = s.entries[id];
     if (!e || e.deletedAt) return null;
-    ['name', 'qty', 'kcal', 'protein', 'carbs', 'fat'].forEach(function (k) {
+    /* amount and unit belong on this list too. Leaving them off let an
+       edit change the calories while the row went on claiming the old
+       amount — a line reading "4 oz" beside six ounces of numbers,
+       which is worse than either half being wrong alone. */
+    ['name', 'qty', 'amount', 'unit', 'kcal', 'protein', 'carbs', 'fat'].forEach(function (k) {
       if (patch[k] !== undefined) e[k] = patch[k];
     });
     touch(e);
