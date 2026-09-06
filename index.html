@@ -123,10 +123,18 @@
         </div>
         <div class="hint" id="feHint"></div>
       </div>
+      <!-- Quick add is for the meal you are never going to log properly:
+           a restaurant plate, someone's birthday cake. It needs a name,
+           because "Quick add · 650" tells you nothing a week later when
+           you are trying to work out where a day went. -->
       <div class="row" style="margin-top:var(--s-2)">
         <label class="field" style="margin:0">
-          <span class="sr">Quick calories</span>
-          <input type="number" id="quickKcal" inputmode="numeric" placeholder="Quick add — calories only">
+          <span class="sr">What it was</span>
+          <input type="text" id="quickName" autocomplete="off" placeholder="Quick add — what was it?">
+        </label>
+        <label class="field grow-0" style="margin:0;width:96px">
+          <span class="sr">Calories</span>
+          <input type="number" id="quickKcal" inputmode="numeric" placeholder="cal">
         </label>
         <button class="btn grow-0" id="addQuick">Add</button>
       </div>

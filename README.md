@@ -314,7 +314,7 @@ supabase/functions/     the only two things a browser may not do:
 SETUP.md                Supabase walkthrough
 STEPS-SHORTCUT.md       Garmin steps into the log, by hand-built Shortcut
 HEALTH-EXPORT.md        the same thing, via Health Auto Export
-tests/                  551 assertions
+tests/                  567 assertions
 ```
 
 ## Tests
@@ -322,7 +322,7 @@ tests/                  551 assertions
 ```
 node tests/tests.js          # 106 — the engine, incl. training calories
 node tests/sync-tests.js     # 101 — merge logic, wire format, session safety
-node tests/food-tests.js     #  77 — food lookup normalizers, no network
+node tests/food-tests.js     #  93 — food lookup normalizers and library ranking
 node tests/gym-tests.js      #  42 — catalog search, substitution, real loads
 node tests/progress-tests.js #  77 — e1RM, RIR, load selection, the rules
 node tests/recipe-tests.js   # 100 — recipe reading, against four real pages

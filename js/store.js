@@ -732,6 +732,71 @@ var Store = (function () {
     return s.foods[id];
   }
 
+  /* ---------------------------------------------------------------
+     SEARCHING YOUR OWN LIBRARY
+
+     What you already eat should be easier to reach than what a public
+     database has heard of. A recipe you built and logged forty times is
+     a better answer to "chicken" than the USDA's forty-first entry for
+     raw poultry, and it always will be.
+
+     rankLibrary is pure — it takes the list rather than reading
+     storage — so the ordering can be tested without a browser.
+
+     The order:
+
+       1. An exact name match, whatever kind it is. If you typed the
+          whole name of a thing, you meant that thing, and burying it
+          under a fuzzy match would be perverse.
+       2. Recipes, best match first. Something you assembled yourself
+          is nearly always what you meant when its name comes up.
+       3. Foods, best match first.
+
+     Within each group, a name that STARTS with what you typed beats
+     one that merely contains it, and a tag match comes last — a tag is
+     a category, and a category is a weaker claim than a name.
+     --------------------------------------------------------------- */
+
+  function matchScore(food, q) {
+    var name = String(food.name || '').toLowerCase();
+    if (!name) return 0;
+    if (name === q) return 4;
+    if (name.indexOf(q) === 0) return 3;
+    if (name.indexOf(q) >= 0) return 2;
+    var tags = food.tags || [];
+    for (var i = 0; i < tags.length; i++) {
+      if (String(tags[i]).toLowerCase().indexOf(q) >= 0) return 1;
+    }
+    return 0;
+  }
+
+  function rankLibrary(list, query) {
+    var q = String(query || '').trim().toLowerCase();
+    if (!q) return [];
+    return (list || [])
+      .map(function (f) { return { f: f, score: matchScore(f, q) }; })
+      .filter(function (x) { return x.score > 0; })
+      .sort(function (a, b) {
+        /* An exact match outranks everything, including the recipe
+           preference below it. */
+        var aExact = a.score === 4, bExact = b.score === 4;
+        if (aExact !== bExact) return aExact ? -1 : 1;
+
+        var aRecipe = (a.f.kind || 'food') === 'recipe';
+        var bRecipe = (b.f.kind || 'food') === 'recipe';
+        if (aRecipe !== bRecipe) return aRecipe ? -1 : 1;
+
+        if (a.score !== b.score) return b.score - a.score;
+        return String(a.f.name).toLowerCase() < String(b.f.name).toLowerCase() ? -1 : 1;
+      })
+      .map(function (x) { return x.f; });
+  }
+
+  function searchLibrary(query, limit) {
+    var out = rankLibrary(foods(), query);
+    return limit ? out.slice(0, limit) : out;
+  }
+
   /* Every tag in use, with how many foods carry it. Sorted by use, so
      the chips you reach for most are the ones nearest the front. */
   function allTags() {
@@ -837,6 +902,7 @@ var Store = (function () {
     entriesFor: entriesFor, engineEntries: engineEntries,
     workoutsFor: workoutsFor, addWorkout: addWorkout, removeWorkout: removeWorkout,
     setSteps: setSteps, stepsOn: stepsOn,
+    rankLibrary: rankLibrary, searchLibrary: searchLibrary,
     plans: plans, plan: plan, savePlan: savePlan, removePlan: removePlan,
     programsUsing: programsUsing,
     startSession: startSession, logSet: logSet, finishSession: finishSession,

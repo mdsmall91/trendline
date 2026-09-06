@@ -6,6 +6,7 @@
 
 (function (root) {
   var FoodAPI = root.FoodAPI || require('../js/foodapi.js');
+  var Store = root.Store || require('../js/store.js');
   var failures = [], passes = 0;
 
   function check(name, cond, detail) {
@@ -240,6 +241,54 @@
   });
   check('OFF kcal is a number', typeof p.kcal === 'number');
   check('USDA kcal is a number', typeof u.kcal === 'number');
+
+  /* ---------- what comes first in a lookup ----------
+
+     Ordering the library ahead of a public database is not a
+     preference, it is the whole point: a recipe you cooked and logged
+     is a better answer to "chicken" than the USDA's forty-first entry
+     for raw poultry. rankLibrary is pure so the order can be pinned
+     down here rather than argued about in a browser. */
+
+  var LIB = [
+    { id: 'a', name: 'Slow Cooker Chicken Tikka Masala', kind: 'recipe', tags: ['dinner'] },
+    { id: 'b', name: 'Chicken breast', kind: 'food', tags: ['high protein'] },
+    { id: 'c', name: 'Chicken thigh', kind: 'food', tags: [] },
+    { id: 'd', name: 'Best Hummus', kind: 'recipe', tags: ['snack'] },
+    { id: 'e', name: 'Greek yoghurt', tags: ['breakfast'] },
+    { id: 'f', name: 'Roast chicken', kind: 'food', tags: [] }
+  ];
+  function ids(q) { return Store.rankLibrary(LIB, q).map(function (f) { return f.id; }).join(''); }
+
+  /* The recipe first, then the two foods whose names START with the
+     query, alphabetically, then the one that merely contains it. */
+  check('a recipe outranks foods, and starts-with outranks contains',
+    ids('chicken') === 'abcf', ids('chicken'));
+  check('a mid-name match is found at all', ids('tikka') === 'a', ids('tikka'));
+  check('case is ignored', ids('CHICKEN') === 'abcf', ids('CHICKEN'));
+
+  /* The one case where the recipe preference must yield. If you typed
+     the entire name of a thing, you meant that thing. */
+  check('an exact name beats the recipe preference', ids('chicken breast') === 'b', ids('chicken breast'));
+  check('an exact recipe name still comes first', ids('best hummus') === 'd', ids('best hummus'));
+
+  /* "chicken t" is inside both "Chicken Tikka" and "Chicken thigh", so
+     both match on contains and the recipe leads. Narrowing it to
+     "chicken th" leaves only the one. */
+  check('a partial phrase matches both, recipe first', ids('chicken t') === 'ac', ids('chicken t'));
+  check('a narrower phrase leaves one', ids('chicken th') === 'c', ids('chicken th'));
+  check('a tag matches when the name does not', ids('breakfast') === 'e', ids('breakfast'));
+  check('a name match outranks a tag match',
+    Store.rankLibrary(LIB, 'snack').length === 1, ids('snack'));
+  check('a food with no kind is treated as a food', ids('greek') === 'e', ids('greek'));
+
+  check('nothing matching returns nothing', ids('sardines') === '');
+  check('an empty query returns nothing, not everything', ids('') === '');
+  check('a whitespace query returns nothing', ids('   ') === '');
+  check('a null query is safe', Store.rankLibrary(LIB, null).length === 0);
+  check('a null list is safe', Store.rankLibrary(null, 'chicken').length === 0);
+  check('a food with no name does not throw',
+    Store.rankLibrary([{ id: 'x' }, { id: 'y', name: 'Chicken' }], 'chicken').length === 1);
 
   var summary = { passes: passes, failures: failures.length, detail: failures };
   root.__results = summary;

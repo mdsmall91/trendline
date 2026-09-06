@@ -14,7 +14,7 @@
   /* Bumped by hand on each deploy, and shown under Setup → Version.
      Its only job is to let "it still looks old" be answered with a
      number instead of a guess. Keep it in step with CACHE in sw.js. */
-  var BUILD = '2026-09-05.17';
+  var BUILD = '2026-09-06.18';
   var day = WL.todayKey();
   var range = 30;
   var foodFilterText = '';
@@ -22,7 +22,7 @@
   var authEmail = '';
   var authMessage = '';
   var syncing = false;
-  var lookup = { results: [], status: '', open: false };
+  var lookup = { results: [], status: '', open: false, source: null };
   var macroKey = 'protein';     /* which macro the Trend chart is showing */
   var trendView = 'food';       /* Trend sub-tab: food | training */
   var libKind = 'food';         /* Foods panel: food | recipe */
@@ -993,7 +993,9 @@
       var sub = [];
       if (r.serving) sub.push(r.serving);
       sub.push(fmt(r.protein) + 'p ' + fmt(r.carbs) + 'c ' + fmt(r.fat) + 'f');
-      sub.push(r.source === 'usda' ? 'USDA' : 'Open Food Facts');
+      sub.push(r.source === 'library'
+        ? (r.kind === 'recipe' ? 'Your recipe' : 'Your food')
+        : (r.source === 'usda' ? 'USDA' : 'Open Food Facts'));
       /* USDA lab foods publish macros and no calorie figure. Saying so
          is the difference between a number you trust and one you don't. */
       if (r.kcalDerived) sub.push('cal from macros');
@@ -1003,15 +1005,19 @@
     }).join('');
   }
 
-  function setLookup(status, results) {
+  function setLookup(status, results, source) {
     lookup.open = true;
     lookup.status = status || '';
     lookup.results = results || [];
+    /* Who opened this list: 'typing' for as-you-type suggestions,
+       undefined for a search or a scan the person asked for. Only the
+       first kind gets closed automatically. */
+    lookup.source = source || null;
     renderLookup();
   }
 
   function closeLookup() {
-    lookup.open = false; lookup.results = []; lookup.status = '';
+    lookup.open = false; lookup.results = []; lookup.status = ''; lookup.source = null;
     renderLookup();
   }
 
@@ -1546,6 +1552,35 @@
     if (ev.key === 'Enter') { ev.preventDefault(); addFoodLine(); }
   });
 
+  /* Suggestions as you type, from your own library.
+
+     There has always been a <datalist> behind this box, and on a phone
+     it may as well not exist: iOS renders it as a cramped dropdown and
+     matches only from the START of the name, so a recipe called
+     "Slow cooker chicken tikka masala" is invisible to anyone typing
+     "tikka" — which is what a person types. A recipe you saved and
+     cannot find is worse than one you never saved.
+
+     So the matches are drawn properly, in the same list the lookup
+     uses, ranked with recipes first. The datalist stays for desktop
+     browsers, where it works fine and costs nothing. */
+  $('foodPick').addEventListener('input', function () {
+    var q = $('foodPick').value.trim();
+    if (q.length < 2) {
+      /* Only close a list we opened ourselves. Closing one full of USDA
+         results because a letter was deleted would be maddening. */
+      if (lookup.source === 'typing') closeLookup();
+      return;
+    }
+    var mine = libraryResults(q);
+    if (!mine.length) {
+      if (lookup.source === 'typing') closeLookup();
+      return;
+    }
+    setLookup('From your library — tap one to log it. "Look it up" searches USDA.',
+      mine, 'typing');
+  });
+
   $('inSave').addEventListener('click', function () {
     var f = Store.addFood({
       name: $('inlineName').textContent, serving: '',
@@ -1565,14 +1600,20 @@
 
   function quickAdd() {
     var k = num($('quickKcal'));
-    if (k === null || k <= 0) return;
-    Store.addEntry(day, { name: 'Quick add', qty: 1, kcal: k });
-    $('quickKcal').value = '';
+    if (k === null || k <= 0) { $('quickKcal').focus(); return; }
+    /* Falls back to whatever is in the food box above, because typing a
+       name there and then reaching for quick add is a normal thing to
+       do, and re-typing it would be silly. Only then to "Quick add". */
+    var name = $('quickName').value.trim() || $('foodPick').value.trim() || 'Quick add';
+    Store.addEntry(day, { name: name, qty: 1, kcal: k });
+    $('quickName').value = ''; $('quickKcal').value = '';
     render();
   }
   $('addQuick').addEventListener('click', quickAdd);
-  $('quickKcal').addEventListener('keydown', function (ev) {
-    if (ev.key === 'Enter') { ev.preventDefault(); quickAdd(); }
+  ['quickKcal', 'quickName'].forEach(function (id) {
+    $(id).addEventListener('keydown', function (ev) {
+      if (ev.key === 'Enter') { ev.preventDefault(); quickAdd(); }
+    });
   });
 
   $('foodLog').addEventListener('click', function (ev) {
@@ -2106,15 +2147,57 @@
   });
 
   /* food lookup — search by name */
+  /* Your own library, shaped like a lookup result so both can sit in
+     one list. No per100g, so it takes the plain servings path in the
+     amount editor — which is right: a recipe is portions, not grams. */
+  function libraryResults(q) {
+    return Store.searchLibrary(q, 8).map(function (f) {
+      return {
+        name: f.name, serving: f.serving || '1 serving',
+        kcal: f.kcal, protein: f.protein, carbs: f.carbs, fat: f.fat,
+        source: 'library', kind: f.kind || 'food', localId: f.id
+      };
+    });
+  }
+
   $('searchOnline').addEventListener('click', function () {
     var q = $('foodPick').value.trim();
     if (!q) { $('foodPick').focus(); setLookup('Type what you ate first, then look it up.', []); return; }
-    setLookup('Searching for “' + q + '”…', []);
+
+    /* Your library answers instantly and without a network, so it goes
+       up first and stays put. Waiting on USDA to show you something you
+       cooked last Tuesday is backwards — the public database is the
+       fallback, not the first port of call. */
+    var mine = libraryResults(q);
+    setLookup(mine.length
+      ? mine.length + ' from your library. Searching USDA too…'
+      : 'Searching for “' + q + '”…', mine);
+
     FoodAPI.searchFoods(q).then(function (rows) {
-      if (!rows.length) setLookup('Nothing found for “' + q + '”. Add it by hand and it is yours from then on.', []);
-      else setLookup(rows.length + ' found. Tap one to log it — it joins your library too.', rows);
+      /* Anything already in your library is dropped from the USDA half.
+         The same name twice, once yours and once theirs, is a choice
+         between a thing you have eaten and a thing you have not — and
+         showing both invites picking the wrong one. */
+      var have = {};
+      mine.forEach(function (r) { have[r.name.toLowerCase()] = 1; });
+      var fresh = rows.filter(function (r) { return !have[String(r.name).toLowerCase()]; });
+
+      if (!mine.length && !fresh.length) {
+        setLookup('Nothing found for “' + q + '”. Add it by hand and it is yours from then on.', []);
+      } else {
+        setLookup(mine.length
+          ? 'Yours first, then ' + fresh.length + ' from USDA.'
+          : fresh.length + ' found. Tap one to log it — it joins your library too.',
+          mine.concat(fresh));
+      }
     }).catch(function (e) {
-      setLookup(String(e.message || e), []);
+      /* A failed search does not throw away the half that worked. */
+      if (mine.length) {
+        setLookup(mine.length + ' from your library. USDA did not answer: ' +
+          String(e.message || e), mine);
+      } else {
+        setLookup(String(e.message || e), []);
+      }
     });
   });
 
@@ -2208,7 +2291,12 @@
     $('photoBarcodeFile').value = '';       /* so the same shot can be retried */
     if (!file) return;
     $('scanStatus').textContent = 'Reading the photo…';
-    Scanner.scanImage(file, 'scanView').then(function (code) {
+    /* The reader makes several passes at a photo, and on a big one they
+       take a couple of seconds between them. Saying which pass it is on
+       is the difference between waiting and wondering. */
+    Scanner.scanImage(file, 'scanView', function (msg) {
+      $('scanStatus').textContent = msg;
+    }).then(function (code) {
       $('scanStatus').textContent = 'Read ' + code + ' — looking it up…';
       resolveBarcode(code);
     }).catch(function (e) {
