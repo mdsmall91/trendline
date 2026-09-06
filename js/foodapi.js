@@ -166,11 +166,23 @@ var FoodAPI = (function () {
       derived = kcal !== null;
     }
 
+    /* OFF's _100g figures are the only ones it normalises reliably, so
+       micros are read from those and scaled to whichever basis the
+       macros ended up on. When the serving weight is unknown the macros
+       are per 100 g too, and the factor is 1. */
+    var offFactor = 1;
+    if (hasServing) {
+      var sg = num(product.serving_quantity);
+      offFactor = (sg && sg > 0) ? sg / 100 : 1;
+    }
+
     return {
       name: name,
       serving: label,
       kcal: round(kcal, 0),
       kcalDerived: derived,
+      micros: micros('off', n, offFactor),
+      micros100g: micros('off', n, 1),
       protein: round(out.protein, 1),
       carbs: round(out.carbs, 1),
       fat: round(out.fat, 1),
@@ -214,6 +226,19 @@ var FoodAPI = (function () {
      carry a serving size, and only then is it safe to scale: a
      householdServingFullText like "1 cup" with no gram weight cannot
      be converted to anything. */
+  /* Micronutrients ride along with the macros through both
+     normalisers. They are read by js/micros.js, which owns the
+     nutrient list and the units, so this file does not need to know
+     what a microgram of folate is — only that whatever comes back is
+     stated on the same basis as the macros beside it, and has to be
+     scaled by the same factor. */
+  function micros(source, raw, factor) {
+    if (typeof Micros === 'undefined') return null;
+    var m = source === 'usda' ? Micros.fromUSDA(raw) : Micros.fromOFF(raw);
+    if (!m) return null;
+    return factor === 1 ? m : Micros.scale(m, factor);
+  }
+
   function fromUSDA(food) {
     if (!food || typeof food !== 'object') return null;
     var list = food.foodNutrients || [];
@@ -269,6 +294,13 @@ var FoodAPI = (function () {
       protein: round(vals.protein, 1),
       carbs: round(vals.carbs, 1),
       fat: round(vals.fat, 1),
+      /* USDA states everything per 100 g, so the micros take the same
+         scaling the macros just took. The unscaled panel is kept beside
+         it for the same reason per100g is: the amount actually eaten is
+         often not the stated serving, and re-basing has to start from
+         the source figures rather than from a rounded serving. */
+      micros: micros('usda', list, scalable ? grams / 100 : 1),
+      micros100g: micros('usda', list, 1),
       per100g: {
         kcal: round(per100.kcal, 0), protein: round(per100.protein, 1),
         carbs: round(per100.carbs, 1), fat: round(per100.fat, 1)
@@ -292,7 +324,11 @@ var FoodAPI = (function () {
       kcal: round(s(food.per100g.kcal), 0),
       protein: round(s(food.per100g.protein), 1),
       carbs: round(s(food.per100g.carbs), 1),
-      fat: round(s(food.per100g.fat), 1)
+      fat: round(s(food.per100g.fat), 1),
+      /* Re-based from the per-100g panel, not from the previous
+         serving, so repeated adjustments cannot compound a rounding. */
+      micros: (typeof Micros !== 'undefined' && food.micros100g)
+        ? Micros.scale(food.micros100g, k) : null
     });
   }
 

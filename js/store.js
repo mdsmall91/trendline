@@ -733,6 +733,11 @@ var Store = (function () {
       servings: (typeof f.servings === 'number' && f.servings > 0) ? f.servings
         : (prev ? prev.servings : null) || null,
       tags: f.tags !== undefined ? cleanTags(f.tags) : ((prev && prev.tags) || []),
+      /* Per serving, like the macros, and absent rather than empty when
+         nothing is known. Carried forward on an edit so that correcting
+         a calorie figure does not silently throw away a vitamin panel
+         that took a lookup to acquire. */
+      micros: f.micros !== undefined ? (f.micros || null) : ((prev && prev.micros) || null),
       deletedAt: null
     });
     save();
@@ -822,6 +827,14 @@ var Store = (function () {
     s.foods[id].deletedAt = now();
     touch(s.foods[id]);
     save();
+  }
+
+  /* One food by id. The micronutrient panel lives on the food rather
+     than being copied onto every entry, so reading a day's micros means
+     following foodId back here. */
+  function food(id) {
+    var f = load().foods[id];
+    return (f && !f.deletedAt) ? f : null;
   }
 
   function findFoodByName(name) {
@@ -918,7 +931,7 @@ var Store = (function () {
     weightPoints: weightPoints, intakeMap: intakeMap, macroMap: macroMap, loggedDates: loggedDates,
     setWeight: setWeight, setNote: setNote, setHabit: setHabit,
     addEntry: addEntry, updateEntry: updateEntry, entry: entry, removeEntry: removeEntry,
-    addFood: addFood, removeFood: removeFood, findFoodByName: findFoodByName,
+    addFood: addFood, food: food, removeFood: removeFood, findFoodByName: findFoodByName,
     allTags: allTags, cleanTags: cleanTags,
     addHabit: addHabit, removeHabit: removeHabit, setSetting: setSetting,
     exportJSON: exportJSON, importJSON: importJSON, reset: reset, clearLocal: clearLocal

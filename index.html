@@ -165,6 +165,18 @@
   </div>
 
   <div class="card">
+    <div class="row" style="align-items:center;margin-bottom:var(--s-2)">
+      <h2 style="margin:0;flex:1">Micronutrients</h2>
+      <div class="seg grow-0" id="microSeg">
+        <button data-micro="today" aria-pressed="true">Today</button>
+        <button data-micro="14" aria-pressed="false">14 days</button>
+      </div>
+    </div>
+    <div class="hint" id="microCoverage"></div>
+    <div id="microBody"></div>
+  </div>
+
+  <div class="card">
     <h2>Habits</h2>
     <div id="habitToday"></div>
   </div>
@@ -638,6 +650,7 @@
 <script src="js/store.js"></script>
 <script src="js/sync.js"></script>
 <script src="js/units.js"></script>
+<script src="js/micros.js"></script>
 <script src="js/foodapi.js"></script>
 <script src="js/recipe.js"></script>
 <script src="js/scanner.js"></script>

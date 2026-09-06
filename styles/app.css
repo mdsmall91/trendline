@@ -490,3 +490,53 @@ code {
 .advice.add_reps, .advice.progress_variation {
   background: var(--accent-soft); color: var(--accent);
 }
+
+
+/* ---------- micronutrients ----------
+
+   A bar per nutrient, because the question is always "how far along am
+   I" and a number alone does not answer it at a glance. The bar is
+   capped at 100% of its track but the figure is not, so 240% of the
+   sodium ceiling reads as a full bar and a number that says 240 —
+   rather than a bar that looks identical to a perfect day. */
+
+.micro-row {
+  display: flex; align-items: baseline; gap: var(--s-3);
+  padding: var(--s-2) 0; border-bottom: var(--hairline);
+}
+.micro-row:last-child { border-bottom: 0; }
+.micro-row .mname { flex: 1; font-size: 0.875rem; }
+.micro-row .mamt {
+  font-family: var(--font-mono); font-size: 0.75rem; color: var(--text-muted);
+  white-space: nowrap;
+}
+.micro-row .mpct {
+  font-family: var(--font-mono); font-size: 0.8125rem; width: 52px;
+  text-align: right; color: var(--text);
+}
+.micro-track {
+  flex: 0 0 84px; height: 6px; background: var(--surface-2);
+  border-radius: 3px; overflow: hidden;
+}
+.micro-track i { display: block; height: 100%; background: var(--accent); }
+
+.micro-row.met    .mpct { color: var(--accent); }
+.micro-row.met    .micro-track i { background: var(--accent); }
+.micro-row.close  .micro-track i { background: var(--accent); opacity: 0.6; }
+.micro-row.short  .micro-track i { background: var(--text-faint); }
+.micro-row.over   .mpct { color: var(--over); }
+.micro-row.over   .micro-track i { background: var(--over); }
+.micro-row.ok     .micro-track i { background: var(--accent); opacity: 0.5; }
+
+/* Thin data is greyed rather than coloured. Colour is a verdict, and a
+   verdict on a quarter of a day is not one. */
+.micro-row.thin .mpct,
+.micro-row.thin .mname { color: var(--text-faint); }
+.micro-row.thin .micro-track i { background: var(--text-faint); opacity: 0.5; }
+.micro-row.unknown .mpct { color: var(--text-faint); }
+
+.micro-head {
+  font-size: 0.6875rem; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--text-faint); margin: var(--s-4) 0 var(--s-1);
+}
+.micro-head:first-child { margin-top: 0; }

@@ -151,6 +151,12 @@ create table if not exists public.plans (
 alter table public.entries add column if not exists amount double precision;
 alter table public.entries add column if not exists unit   text;
 
+-- The micronutrient panel for a food, per serving, as {key: amount}.
+-- One column rather than eighteen: the nutrient list belongs to
+-- js/micros.js and will grow, and a migration per vitamin is a bad
+-- trade for a value nothing queries by.
+alter table public.foods   add column if not exists micros jsonb;
+
 -- ---------- pull cursor ----------
 -- Every read is "give me what changed since X", so this index is the
 -- one that matters.

@@ -31,7 +31,7 @@ var Sync = (function () {
      snake_case, and the list is explicit so an added local field cannot
      accidentally start being written to the server. */
   var TABLES = {
-    foods:    { fields: ['id', 'name', 'serving', 'kcal', 'protein', 'carbs', 'fat', 'kind', 'servings', 'tags'] },
+    foods:    { fields: ['id', 'name', 'serving', 'kcal', 'protein', 'carbs', 'fat', 'kind', 'servings', 'tags', 'micros'] },
     habits:   { fields: ['id', 'name', 'sort'] },
     days:     { fields: ['id', 'weight', 'note', 'habits'] },
     entries:  { fields: ['id', 'date', 'foodId', 'name', 'qty', 'amount', 'unit', 'kcal', 'protein', 'carbs', 'fat'] },

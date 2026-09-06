@@ -14,7 +14,7 @@
   /* Bumped by hand on each deploy, and shown under Setup → Version.
      Its only job is to let "it still looks old" be answered with a
      number instead of a guess. Keep it in step with CACHE in sw.js. */
-  var BUILD = '2026-09-06.20';
+  var BUILD = '2026-09-06.21';
   var day = WL.todayKey();
   var range = 30;
   var foodFilterText = '';
@@ -26,6 +26,7 @@
   var macroKey = 'protein';     /* which macro the Trend chart is showing */
   var trendView = 'food';       /* Trend sub-tab: food | training */
   var libKind = 'food';         /* Foods panel: food | recipe */
+  var microView = 'today';      /* Micronutrient card: today | 14 */
   var tagFilter = null;         /* active tag chip, or null for all */
   var trainView = 'today';      /* Train sub-tab: today | workouts | exercises */
   var exQuery = '';             /* exercise search box */
@@ -444,6 +445,90 @@
       (macroKey === 'protein'
         ? '. Protein is the one to defend on a deficit — it is what decides whether the weight you lose is fat.'
         : '. ' + name + ' is the remainder after protein and calories, so there is no such thing as being over on it.');
+  }
+
+  /* ---------------------------------------------------------------
+     MICRONUTRIENTS
+
+     Every figure is shown with the share of the day it was computed
+     from. A percentage without its coverage is the kind of number that
+     makes someone buy supplements over a gap in a database.
+     --------------------------------------------------------------- */
+
+  function microLinesFor(date) {
+    return Store.entriesFor(date).map(function (e) {
+      var f = e.foodId ? Store.food(e.foodId) : null;
+      return { kcal: e.kcal, qty: e.qty, micros: f && f.micros ? f.micros : null };
+    });
+  }
+
+  function renderMicroRow(r) {
+    var v = Micros.verdict(r);
+    var pct = r.percent === null ? null : Math.round(r.percent);
+    var amt = r.amount === null ? '—'
+      : fmt(r.amount, r.amount < 10 ? 1 : 0) + ' ' + (r.unit === 'ug' ? '\u00b5g' : r.unit);
+    var width = pct === null ? 0 : Math.max(0, Math.min(100, pct));
+
+    return '<div class="micro-row ' + esc(v) + '">' +
+      '<span class="mname">' + esc(r.label) + '</span>' +
+      '<span class="mamt">' + esc(amt) + '</span>' +
+      '<span class="micro-track"><i style="width:' + width + '%"></i></span>' +
+      '<span class="mpct">' + (pct === null ? '' : pct + '%') + '</span>' +
+      '</div>';
+  }
+
+  function renderMicros() {
+    if (typeof Micros === 'undefined') return;
+
+    var data, days = 1;
+    if (microView === 'today') {
+      data = Micros.totals(microLinesFor(day));
+    } else {
+      var perDay = [];
+      for (var i = 13; i >= 0; i--) perDay.push(Micros.totals(microLinesFor(WL.addDays(day, -i))));
+      data = Micros.average(perDay);
+      days = data.days;
+    }
+
+    var rows = data.rows || [];
+    if (!rows.length || (microView === 'today' && !data.kcalTotal)) {
+      $('microBody').innerHTML = '<p class="empty">Nothing logged yet.</p>';
+      $('microCoverage').textContent = '';
+      return;
+    }
+
+    /* The headline sentence. It leads with coverage on purpose: it is
+       the number that decides whether any of the others mean anything. */
+    var cov = data.coverage;
+    if (cov === null) {
+      $('microCoverage').textContent = '';
+    } else if (microView === 'today') {
+      $('microCoverage').textContent = Math.round(cov) + '% of today\u2019s calories came from foods ' +
+        'that report micronutrients' +
+        (cov < 60 ? '. Below about 60% these figures are a floor, not a measurement \u2014 ' +
+          'look foods up rather than typing them and the coverage climbs.' : '.');
+    } else {
+      $('microCoverage').textContent = 'Averaged over ' + days + ' logged day' +
+        (days === 1 ? '' : 's') + '. ' + Math.round(cov) + '% of those calories report micronutrients.';
+    }
+
+    function section(title, group, note) {
+      var list = rows.filter(function (r) { return r.group === group; });
+      if (!list.length) return '';
+      return '<div class="micro-head">' + esc(title) + '</div>' +
+        (note ? '<div class="hint" style="margin:0 0 var(--s-2)">' + esc(note) + '</div>' : '') +
+        list.map(renderMicroRow).join('');
+    }
+
+    $('microBody').innerHTML =
+      section('Day to day', 'daily') +
+      section('Worth watching over weeks', 'watch',
+        microView === 'today'
+          ? 'One day says little about any of these. The 14-day view is the one to read.'
+          : '') +
+      '<div class="hint">Against the FDA Daily Values printed on packets \u2014 a general adult ' +
+      'reference, not a prescription. Total sugars has no percentage because the Daily Value ' +
+      'is for added sugar, and scoring one against the other would mark fruit as a failure.</div>';
   }
 
   /* ---------------------------------------------------------------
@@ -1165,14 +1250,23 @@
       name = rec.name + ' (' + grams + ' g)';
     }
 
+    /* The micro panel follows the same weight the macros were taken at.
+       Editing 100 g down to 30 g has to move the sodium with it, or the
+       food quietly claims a full serving's worth of everything nobody
+       looked at. */
+    var panel = rec.micros || null;
+    if (grams && rec.micros100g && typeof Micros !== 'undefined') {
+      panel = Micros.scale(rec.micros100g, grams / 100);
+    }
+
     var existing = Store.findFoodByName(name);
     var f = existing
       ? Store.addFood({
-          id: existing.id, name: name, serving: serving,
+          id: existing.id, name: name, serving: serving, micros: panel,
           kcal: vals.kcal, protein: vals.protein, carbs: vals.carbs, fat: vals.fat
         })
       : Store.addFood({
-          name: name, serving: serving,
+          name: name, serving: serving, micros: panel,
           kcal: vals.kcal, protein: vals.protein, carbs: vals.carbs, fat: vals.fat
         });
 
@@ -1395,6 +1489,7 @@
   function render() {
     var D = derive();
     renderToday(D);
+    renderMicros();
     renderTrend(D);
     renderTrain(D);
     renderFoods();
@@ -1559,6 +1654,7 @@
      --------------------------------------------------------------- */
 
   var unitChoice = 'serving';
+  var pendingMicros = null;    /* a panel read from a recipe page, awaiting Save */
 
   function currentFood() {
     return Store.findFoodByName($('foodPick').value.trim());
@@ -2490,6 +2586,16 @@
     window.scrollTo(0, 0);
   });
 
+  $('microSeg').addEventListener('click', function (ev) {
+    var b = ev.target.closest('[data-micro]');
+    if (!b) return;
+    microView = b.dataset.micro;
+    Array.prototype.forEach.call($('microSeg').children, function (x) {
+      x.setAttribute('aria-pressed', String(x === b));
+    });
+    renderMicros();
+  });
+
   $('libSeg').addEventListener('click', function (ev) {
     var b = ev.target.closest('[data-lib]');
     if (!b) return;
@@ -2559,6 +2665,22 @@
       $('nfC').value = per.carbs === null || per.carbs === undefined ? '' : String(per.carbs);
       $('nfF').value = per.fat === null || per.fat === undefined ? '' : String(per.fat);
 
+      /* A recipe page states fibre, sugars, saturated fat, sodium and
+         cholesterol far more often than it states anything else. That
+         is a partial panel, which is worth keeping: coverage reporting
+         exists precisely so partial data can be counted honestly
+         rather than discarded. */
+      pendingMicros = null;
+      if (r.extras && typeof Micros !== 'undefined') {
+        var e = r.extras, panel = {};
+        if (e.fiber !== null && e.fiber !== undefined) panel.fiber = e.fiber;
+        if (e.sugar !== null && e.sugar !== undefined) panel.sugar = e.sugar;
+        if (e.satFat !== null && e.satFat !== undefined) panel.satFat = e.satFat;
+        if (e.sodium !== null && e.sodium !== undefined) panel.sodium = e.sodium;
+        if (e.cholesterol !== null && e.cholesterol !== undefined) panel.chol = e.cholesterol;
+        if (Object.keys(panel).length) pendingMicros = panel;
+      }
+
       $('newFoodCard').hidden = false;
       $('newFoodCard').scrollIntoView({ block: 'center', behavior: 'smooth' });
 
@@ -2612,6 +2734,7 @@
     Store.addFood({
       id: dupe ? dupe.id : undefined,
       name: name, serving: $('nfServing').value.trim(),
+      micros: pendingMicros,
       kind: libKind,
       servings: libKind === 'recipe' ? num($('nfServings')) : null,
       tags: $('nfTags').value,
@@ -2619,6 +2742,7 @@
     });
     ['nfName', 'nfServing', 'nfServings', 'nfKcal', 'nfP', 'nfC', 'nfF', 'nfTags']
       .forEach(function (id) { $(id).value = ''; });
+    pendingMicros = null;
     $('newFoodCard').hidden = true;
     render();
   });
