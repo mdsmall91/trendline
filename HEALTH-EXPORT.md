@@ -123,6 +123,30 @@ automations covering the same days cannot double-count.
 It also handles Garmin arriving late — the watch syncs when it syncs, and a
 day's step count can still be climbing hours after the day ended.
 
+## Nothing exports at night, and that is not fixable
+
+Observed, and worth stating flatly: overnight runs do not happen. The phone is
+locked, Apple Health is unreadable while it is, and iOS is not running a
+background task for an app nobody has opened. No setting changes this.
+
+So the working assumption is **exports happen during the day, while the phone is
+in use**, and everything else is built around that:
+
+- **Date Range: Default** — today *and* the full previous day. Today's figure
+  keeps climbing as you use the phone; yesterday's gets one last correction the
+  first time the app wakes, which is what repairs the night nobody exported.
+- A second automation on **Previous 7 Days**, daily, if you want a longer safety
+  net. It cannot double-count.
+- The **refresh button** beside Steps, for when you want the number now.
+
+### History is kept, whatever the window is
+
+An export that only ever sends today does not erase anything. `ingest_steps`
+writes one row per date and only ever replaces *that* date — a day it is not
+told about is not touched. Ten days of history and a today-only export coexist
+fine; the history simply stops growing at the edges the window never reaches,
+which is what the backfill automation is for.
+
 ## The locked phone
 
 **Apple Health cannot be read while the phone is locked.** Their own docs say

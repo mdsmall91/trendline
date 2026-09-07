@@ -14,7 +14,7 @@
   /* Bumped by hand on each deploy, and shown under Setup → Version.
      Its only job is to let "it still looks old" be answered with a
      number instead of a guess. Keep it in step with CACHE in sw.js. */
-  var BUILD = '2026-09-06.26';
+  var BUILD = '2026-09-07.27';
   var day = WL.todayKey();
   var range = 30;
   var foodFilterText = '';
@@ -2568,6 +2568,10 @@
      Step 1 is what makes the number current to the minute.
      --------------------------------------------------------------- */
 
+  /* Set when the app hands off to Shortcuts, cleared when it comes back
+     and re-checks. */
+  var stepsAwaitingReturn = false;
+
   function pullSteps() {
     var note = $('stepsPullNote');
     if (!Sync.configured() || !Sync.signedIn()) {
@@ -2579,11 +2583,16 @@
     var before = Store.stepsOn(day);
 
     if (name) {
-      /* Leaves the app. iOS runs the Shortcut, Health Auto Export
-         exports, and coming back fires visibilitychange, which syncs
-         again — so the number is usually there before the person has
-         finished looking at it. */
+      /* This leaves the app. iOS runs the Shortcut, Health Auto Export
+         exports, and the person comes back — at which point the sync
+         fired below has long since finished and found nothing, because
+         it ran before the export did.
+
+         So the return trip is what matters: stepsAwaitingReturn makes
+         visibilitychange pick the job back up. Without it the button
+         reliably reported failure a second before succeeding. */
       note.textContent = 'Asking Shortcuts to run "' + name + '"…';
+      stepsAwaitingReturn = true;
       try {
         window.location.href = 'shortcuts://run-shortcut?name=' + encodeURIComponent(name);
       } catch (e) { /* not iOS, or Shortcuts is not installed */ }
@@ -3465,6 +3474,16 @@
          waiting on a network round trip leaves a window where the
          obvious thing to do is log breakfast into yesterday. */
       checkDayRollover();
+      /* Back from the Shortcut: the export has had its moment now, so
+         this is the sync that was actually worth doing. A couple of
+         seconds of grace, because the upload and the write are not
+         instant. */
+      if (stepsAwaitingReturn) {
+        stepsAwaitingReturn = false;
+        $('stepsPullNote').textContent = 'Back — checking for what the Shortcut sent…';
+        setTimeout(pullSteps, 2500);
+        return;
+      }
       doSync('foreground');
       return;
     }
