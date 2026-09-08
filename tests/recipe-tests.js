@@ -203,6 +203,57 @@
   check('summary handles a page with no nutrition',
     /does not publish nutrition/.test(Recipe.summary(noNut)));
 
+  /* ---------- read off the page, rather than declared ----------
+
+     The second pass, for the many pages that print nutrition without
+     publishing it. What comes back must normalise into exactly the
+     shape declared data does, so the UI has one thing to render — but
+     must never claim to be the same KIND of fact. */
+
+  var readOk = Recipe.fromRead({
+    found: true, name: '  Burrito Bowl  ', serving: '1 bowl (510 g)', servings: 1,
+    kcal: 625, protein: 45, carbs: 60, fat: 22.5,
+    fiber: 9, sodium: 1350, satFat: 6, calcium: 220
+  }, 'https://example.com/bowl');
+  check('a complete reading is ok', readOk.ok);
+  eq('the name is trimmed', readOk.name, 'Burrito Bowl');
+  eq('calories come through', readOk.per.kcal, 625);
+  eq('so does fat', readOk.per.fat, 22.5);
+  eq('the stated serving is kept', readOk.servingLabel, '1 bowl (510 g)');
+  eq('and it is labelled as read, not declared', readOk.source, 'read');
+  eq('micronutrients come across', Object.keys(readOk.micros).length, 4);
+  eq('sodium among them', readOk.micros.sodium, 1350);
+  eq('url carried', readOk.url, 'https://example.com/bowl');
+
+  var readPartial = Recipe.fromRead({ found: true, name: 'Thing', kcal: 300, protein: 10 }, 'u');
+  eq('a half-read page is not ok', readPartial.ok, false);
+  eq('and names the gaps', readPartial.missing.join(','), 'carbs,fat');
+  eq('while keeping what it had', readPartial.per.protein, 10);
+  eq('no micros means none, not an empty object', readPartial.micros, null);
+
+  /* Atwater still applies, and is still flagged. */
+  var readDerived = Recipe.fromRead({
+    found: true, name: 'Macros only', protein: 20, carbs: 30, fat: 10
+  }, 'u');
+  check('calories are derived when absent', readDerived.ok);
+  eq('to the Atwater figure', readDerived.per.kcal, 290);
+  eq('and flagged as derived', readDerived.kcalDerived, true);
+
+  /* The refusal that matters most: a page with nothing on it must not
+     come back with a plausible meal on it. */
+  var readNone = Recipe.fromRead({ found: false, name: 'A blog post', note: 'No nutrition here.' }, 'u');
+  eq('found:false is not ok', readNone.ok, false);
+  eq('and says why', readNone.reason, 'no-nutrition');
+  eq('and is still marked as a reading', readNone.source, 'read');
+  eq('rubbish in', Recipe.fromRead(null, 'u').ok, false);
+
+  check('the summary says the figures were read, not published',
+    /Read off the page/.test(Recipe.summary(readOk)), Recipe.summary(readOk));
+  check('and tells you to check them',
+    /check it against the page/.test(Recipe.summary(readOk)));
+  check('a declared result says no such thing',
+    !/Read off the page/.test(Recipe.summary(bb)), Recipe.summary(bb));
+
   /* ---------- what people actually paste ---------- */
 
   eq('a bare domain gets a protocol', Recipe.tidyUrl('budgetbytes.com/x'), 'https://budgetbytes.com/x');

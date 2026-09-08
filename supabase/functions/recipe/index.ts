@@ -216,6 +216,53 @@ function extractTitle(html: string): string | null {
 }
 
 // ---------------------------------------------------------------
+// The readable text of the page.
+//
+// Structured data is the good path and stays the first one tried. But
+// most pages that state nutrition are not recipes and publish nothing
+// machine-readable — a restaurant's allergen table, a supplement label,
+// a manufacturer's product page. The numbers are right there in the
+// text, and a model can read them.
+//
+// So the text comes back alongside the blocks, and the app decides:
+// declared fields where they exist, the text only as a fallback, and
+// clearly marked as the weaker of the two when it is used.
+//
+// Script, style and template contents are dropped outright — a page's
+// inline JavaScript is bigger than its prose and contains nothing a
+// person reads.
+// ---------------------------------------------------------------
+
+const MAX_TEXT = 40_000;
+
+function extractText(html: string): string {
+  let t = html
+    .replace(/<script[\s\S]*?<\/script\s*>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style\s*>/gi, ' ')
+    .replace(/<noscript[\s\S]*?<\/noscript\s*>/gi, ' ')
+    .replace(/<svg[\s\S]*?<\/svg\s*>/gi, ' ')
+    .replace(/<!--[\s\S]*?-->/g, ' ');
+
+  // Block-level tags become newlines so a nutrition table does not
+  // collapse into one unreadable line of numbers.
+  t = t.replace(/<\/(p|div|tr|li|h[1-6]|section|article|table|br)\s*>/gi, '\n')
+       .replace(/<br\s*\/?>/gi, '\n')
+       .replace(/<\/t[dh]\s*>/gi, ' \u00b7 ')
+       .replace(/<[^>]+>/g, ' ');
+
+  t = t.replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&')
+       .replace(/&lt;/gi, '<').replace(/&gt;/gi, '>')
+       .replace(/&quot;/gi, '"').replace(/&#39;/gi, "'")
+       .replace(/&[a-z]+;/gi, ' ');
+
+  t = t.replace(/[ \t\u00a0]+/g, ' ')
+       .replace(/\n\s*\n\s*\n+/g, '\n\n')
+       .trim();
+
+  return t.length > MAX_TEXT ? t.slice(0, MAX_TEXT) : t;
+}
+
+// ---------------------------------------------------------------
 
 // Who is asking. The token is handed to the auth server rather than
 // decoded here: verifying a signature by hand is exactly the kind of
@@ -266,6 +313,7 @@ Deno.serve(async (req: Request) => {
       url: page.url,
       title: extractTitle(page.html),
       blocks,
+      text: extractText(page.html),
       // Said plainly, so the app can tell "the site publishes nothing"
       // apart from "the reader failed". They need different sentences.
       blockCount: blocks.length,

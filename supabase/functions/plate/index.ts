@@ -133,6 +133,66 @@ const TOOL = {
   },
 };
 
+// Reading a page is a different job from reading a photograph, and it
+// wants its own shape: one food, stated per serving, with whatever
+// micronutrients the page bothered to print.
+const PAGE_TOOL = {
+  name: 'record_food',
+  description: 'Record the nutrition this page states for one food or dish.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      name: { type: 'string', description: 'The food as the page names it, brand included.' },
+      serving: {
+        type: 'string',
+        description: 'The serving the figures are for, as the page states it — "1 cup (240 ml)", "2 pieces".',
+      },
+      servings: {
+        type: 'number',
+        description: 'How many of those servings the whole recipe or package makes. Omit if not stated.',
+      },
+      kcal: { type: 'number', description: 'Calories PER SERVING.' },
+      protein: { type: 'number', description: 'Grams of protein per serving.' },
+      carbs: { type: 'number', description: 'Grams of carbohydrate per serving.' },
+      fat: { type: 'number', description: 'Grams of fat per serving.' },
+      fiber: { type: 'number', description: 'Grams of fibre per serving.' },
+      sugar: { type: 'number', description: 'Grams of total sugars per serving.' },
+      addedSugar: { type: 'number', description: 'Grams of added sugar per serving.' },
+      satFat: { type: 'number', description: 'Grams of saturated fat per serving.' },
+      sodium: { type: 'number', description: 'Milligrams of sodium per serving.' },
+      chol: { type: 'number', description: 'Milligrams of cholesterol per serving.' },
+      potassium: { type: 'number', description: 'Milligrams of potassium per serving.' },
+      calcium: { type: 'number', description: 'Milligrams of calcium per serving.' },
+      iron: { type: 'number', description: 'Milligrams of iron per serving.' },
+      vitC: { type: 'number', description: 'Milligrams of vitamin C per serving.' },
+      vitD: { type: 'number', description: 'Micrograms of vitamin D per serving.' },
+      found: {
+        type: 'boolean',
+        description: 'False if the page states no nutrition at all. Do not guess in that case.',
+      },
+      note: { type: 'string', description: 'One short sentence on anything unclear or missing.' },
+    },
+    required: ['name', 'found'],
+  },
+};
+
+const PAGE_SYSTEM = `You read nutrition figures off a web page, for a food log.
+
+The page text is given to you. Report ONLY what the page states.
+
+- Every figure must be PER SERVING, and say which serving in the serving
+  field. If the page states per 100 g, that is the serving: "100 g".
+- A percentage of a Daily Value is not an amount. Convert only when the page
+  also gives the amount; otherwise leave the field out.
+- Omit any field the page does not state. An omitted field is correct and
+  useful; an invented one silently corrupts a food log.
+- Units matter: sodium, cholesterol, potassium, calcium and iron in
+  MILLIGRAMS, vitamin D in MICROGRAMS, everything else in grams.
+- If the page carries several foods, take the one the URL is about — the
+  dish the page is for, not something in a sidebar.
+- If there is no nutrition on the page at all, set found false. Do not
+  reconstruct it from the ingredients.`;
+
 const SYSTEM = `You estimate what is on a plate from a photograph, for a food log.
 
 Identify each distinct food and estimate its edible weight in grams.
@@ -175,19 +235,25 @@ Deno.serve(async (req: Request) => {
     }, 503);
   }
 
-  let image: string, mediaType: string;
+  let image = '', mediaType = 'image/jpeg', pageText = '', pageUrl = '';
   try {
     const body = await req.json();
+    pageText = String(body?.text ?? '').slice(0, 60_000);
+    pageUrl = String(body?.url ?? '').slice(0, 500);
     image = String(body?.image ?? '');
-    mediaType = String(body?.mediaType ?? 'image/jpeg');
-    if (!image) throw new Error('No image.');
-    if (!/^image\/(jpeg|png|webp|gif)$/.test(mediaType)) throw new Error('Unsupported image type.');
-    if (image.length > MAX_IMAGE_BYTES) {
-      throw new Error('That photo is too large. The app should have shrunk it first.');
+    if (!image && !pageText) throw new Error('Nothing to read.');
+    if (image) {
+      mediaType = String(body?.mediaType ?? 'image/jpeg');
+      if (!/^image\/(jpeg|png|webp|gif)$/.test(mediaType)) throw new Error('Unsupported image type.');
+      if (image.length > MAX_IMAGE_BYTES) {
+        throw new Error('That photo is too large. The app should have shrunk it first.');
+      }
     }
   } catch (e) {
     return json({ error: e instanceof Error ? e.message : 'Bad request.' }, 400);
   }
+
+  const readingPage = !image;
 
   const control = new AbortController();
   const timer = setTimeout(() => control.abort(), TIMEOUT_MS);
@@ -203,15 +269,21 @@ Deno.serve(async (req: Request) => {
       body: JSON.stringify({
         model: MODEL,
         max_tokens: 2000,
-        system: SYSTEM,
-        tools: [TOOL],
-        tool_choice: { type: 'tool', name: 'record_plate' },
+        system: readingPage ? PAGE_SYSTEM : SYSTEM,
+        tools: [readingPage ? PAGE_TOOL : TOOL],
+        tool_choice: { type: 'tool', name: readingPage ? 'record_food' : 'record_plate' },
         messages: [{
           role: 'user',
-          content: [
-            { type: 'image', source: { type: 'base64', media_type: mediaType, data: image } },
-            { type: 'text', text: 'What is on this plate, and roughly how much of each?' },
-          ],
+          content: readingPage
+            ? [{
+                type: 'text',
+                text: 'Page: ' + pageUrl + '\n\n' + pageText +
+                  '\n\nWhat nutrition does this page state, and for what serving?',
+              }]
+            : [
+                { type: 'image', source: { type: 'base64', media_type: mediaType, data: image } },
+                { type: 'text', text: 'What is on this plate, and roughly how much of each?' },
+              ],
         }],
       }),
     });
@@ -251,6 +323,15 @@ Deno.serve(async (req: Request) => {
     const block = (data.content || []).find((c: { type?: string }) => c.type === 'tool_use');
     if (!block) {
       return json({ error: 'The reader did not return a result it could use.' }, 502);
+    }
+
+    if (readingPage) {
+      return json({
+        ok: true,
+        food: block.input ?? null,
+        usage: data.usage ?? null,
+        model: MODEL,
+      });
     }
 
     return json({

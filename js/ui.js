@@ -14,7 +14,7 @@
   /* Bumped by hand on each deploy, and shown under Setup → Version.
      Its only job is to let "it still looks old" be answered with a
      number instead of a guess. Keep it in step with CACHE in sw.js. */
-  var BUILD = '2026-09-07.27';
+  var BUILD = '2026-09-08.28';
   var day = WL.todayKey();
   var range = 30;
   var foodFilterText = '';
@@ -1447,6 +1447,7 @@
     refreshUnits();
     closeFoodEdit();
     closeLookup();
+    closeAddSheet();
     render();
   }
   /* ---------------------------------------------------------------
@@ -2050,12 +2051,13 @@
      every time it is eaten. Both routes that bring a full panel with
      them belong right here, where the choice is actually made. */
   $('inLookup').addEventListener('click', function () {
-    $('inlineNew').hidden = true;
-    $('foodPick').value = $('inlineName').textContent;
+    var name = $('inlineName').textContent;
+    showAddPane('search');
+    $('addSearchText').value = name;
     $('searchOnline').click();
   });
   $('inScan').addEventListener('click', function () {
-    $('inlineNew').hidden = true;
+    showAddPane('scan');
     openScanner();
   });
   $('inlineNew').addEventListener('keydown', function (ev) {
@@ -2729,8 +2731,8 @@
   }
 
   $('searchOnline').addEventListener('click', function () {
-    var q = $('foodPick').value.trim();
-    if (!q) { $('foodPick').focus(); setLookup('Type what you ate first, then look it up.', []); return; }
+    var q = ($('addSearchText').value || $('foodPick').value).trim();
+    if (!q) { $('addSearchText').focus(); setLookup('Type what you ate first, then look it up.', []); return; }
 
     /* Your library answers instantly and without a network, so it goes
        up first and stays put. Waiting on USDA to show you something you
@@ -2943,6 +2945,7 @@
     });
     plateItems = [];
     $('plateCard').hidden = true;
+    closeAddSheet();
     render();
   });
 
@@ -3109,6 +3112,204 @@
   $('cancelFood').addEventListener('click', function () { $('newFoodCard').hidden = true; });
 
   /* ---------------------------------------------------------------
+     THE ADD SHEET
+
+     Six ways to log a meal had accumulated on one card, all on screen
+     at once, and five of them were the wrong one on any given
+     occasion. The common case — something eaten before, by name —
+     stays on the page. Everything else is behind the plus, one route
+     at a time, chosen on purpose.
+
+     The panels themselves were moved rather than rebuilt, so every
+     behaviour they already had still applies.
+     --------------------------------------------------------------- */
+
+  var addPane = 'search';
+
+  var ADD_PANES = {
+    search: 'addSearchPane', link: 'addLinkPane', scan: 'addScanPane',
+    photo: 'addPhotoPane', manual: 'addManualPane'
+  };
+
+  function showAddPane(which) {
+    addPane = which;
+    Object.keys(ADD_PANES).forEach(function (k) {
+      $(ADD_PANES[k]).hidden = k !== which;
+    });
+    Array.prototype.forEach.call($('addSeg').children, function (x) {
+      x.setAttribute('aria-pressed', String(x.dataset.add === which));
+    });
+    /* Results from one route are meaningless under another. Switching
+       clears them rather than leaving a plate of food under "Barcode". */
+    closeLookup();
+    $('foodEdit').hidden = true;
+    $('plateCard').hidden = true;
+    $('inlineNew').hidden = true;
+    editing = null;
+  }
+
+  function openAddSheet(which) {
+    $('addSheet').hidden = false;
+    showAddPane(which || 'search');
+    /* Whatever was typed on the page comes with you — retyping it to
+       search for it would be a silly toll. */
+    var typed = $('foodPick').value.trim();
+    if (which === 'manual' || addPane === 'manual') $('addManualName').value = typed;
+    else $('addSearchText').value = typed;
+    var first = { search: 'addSearchText', link: 'addLinkUrl', manual: 'addManualName' }[addPane];
+    if (first) $(first).focus();
+  }
+
+  function closeAddSheet() {
+    $('addSheet').hidden = true;
+  }
+
+  $('openAdd').addEventListener('click', function () { openAddSheet('search'); });
+  $('addClose').addEventListener('click', closeAddSheet);
+  $('addSheet').addEventListener('click', function (ev) {
+    /* Tapping the dimmed area behind the sheet closes it. */
+    if (ev.target === $('addSheet')) closeAddSheet();
+  });
+  $('addSeg').addEventListener('click', function (ev) {
+    var b = ev.target.closest('[data-add]');
+    if (!b) return;
+    showAddPane(b.dataset.add);
+    var first = { search: 'addSearchText', link: 'addLinkUrl', manual: 'addManualName' }[b.dataset.add];
+    if (first) $(first).focus();
+  });
+  document.addEventListener('keydown', function (ev) {
+    if (ev.key === 'Escape' && !$('addSheet').hidden) closeAddSheet();
+  });
+
+  $('addSearchText').addEventListener('keydown', function (ev) {
+    if (ev.key === 'Enter') { ev.preventDefault(); $('searchOnline').click(); }
+  });
+
+  /* ---------------------------------------------------------------
+     A LINK TO ANYTHING
+
+     Two passes, in order of how much they can be trusted.
+
+     Declared structured data first: exact, free, and the site's own
+     published figures. When a page has it, that is the answer.
+
+     Failing that, the page's prose goes to the reader. Most pages that
+     state nutrition are not recipes and publish nothing
+     machine-readable — restaurant allergen tables, product pages — and
+     the numbers are printed plainly on them. What comes back is
+     labelled as read rather than declared, everywhere it appears,
+     because the two are not the same kind of fact.
+     --------------------------------------------------------------- */
+
+  function readLink() {
+    var raw = $('addLinkUrl').value.trim();
+    if (!raw) { $('addLinkUrl').focus(); return; }
+    var hint = $('addLinkHint');
+    $('addLinkGo').disabled = true;
+    hint.textContent = 'Reading the page…';
+
+    Recipe.lookup(raw).then(function (r) {
+      /* Complete published data wins outright. */
+      if (r.ok) return r;
+      /* Anything short of that is worth a second pass over the prose,
+         but only when there is prose to read. */
+      if (!r.pageText) return r;
+      hint.textContent = r.reason === 'no-recipe'
+        ? 'Nothing published on that page — reading the text instead…'
+        : 'Published data was incomplete — reading the text as well…';
+      return Recipe.readPage(r.url || raw, r.pageText).then(function (read) {
+        /* The declared half is still the better half. Only fields the
+           page never declared are taken from the reading. */
+        if (r.per && read.per) {
+          ['kcal', 'protein', 'carbs', 'fat'].forEach(function (k) {
+            if (r.per[k] === null && read.per[k] !== null) {
+              r.per[k] = read.per[k];
+              r.source = 'mixed';
+            }
+          });
+          r.missing = ['kcal', 'protein', 'carbs', 'fat'].filter(function (k) {
+            return r.per[k] === null;
+          });
+          r.ok = r.missing.length === 0;
+          if (!r.micros && read.micros) r.micros = read.micros;
+          if (!r.servings && read.servings) r.servings = read.servings;
+          return r;
+        }
+        return read;
+      }).catch(function () { return r; });
+    }).then(function (r) {
+      $('addLinkGo').disabled = false;
+      hint.textContent = Recipe.summary(r);
+      if (r.reason === 'no-recipe' && !r.name) return;
+
+      /* Lands in the ordinary add form, like every other route, so it
+         is checked before it counts. */
+      libKind = 'recipe';
+      $('nfName').value = r.name || '';
+      $('nfServing').value = r.servingLabel || '1 serving';
+      $('nfServings').value = r.servings ? String(r.servings) : '';
+      $('nfTags').value = '';
+      var per = r.per || {};
+      $('nfKcal').value = per.kcal === null || per.kcal === undefined ? '' : String(per.kcal);
+      $('nfP').value = per.protein === null || per.protein === undefined ? '' : String(per.protein);
+      $('nfC').value = per.carbs === null || per.carbs === undefined ? '' : String(per.carbs);
+      $('nfF').value = per.fat === null || per.fat === undefined ? '' : String(per.fat);
+
+      pendingMicros = r.micros || microsFromExtras(r.extras);
+      $('newFoodCard').hidden = false;
+      $('newFoodCard').scrollIntoView({ block: 'center', behavior: 'smooth' });
+      if (!r.ok) {
+        var first = { calories: 'nfKcal', protein: 'nfP', carbs: 'nfC', fat: 'nfF' }[(r.missing || [])[0]];
+        $(first || 'nfName').focus();
+      }
+    }).catch(function (e) {
+      $('addLinkGo').disabled = false;
+      hint.textContent = e.message || 'That page could not be read.';
+    });
+  }
+
+  /* A recipe page's own extras, in micro keys. */
+  function microsFromExtras(e) {
+    if (!e || typeof Micros === 'undefined') return null;
+    var panel = {};
+    if (e.fiber !== null && e.fiber !== undefined) panel.fiber = e.fiber;
+    if (e.sugar !== null && e.sugar !== undefined) panel.sugar = e.sugar;
+    if (e.satFat !== null && e.satFat !== undefined) panel.satFat = e.satFat;
+    if (e.sodium !== null && e.sodium !== undefined) panel.sodium = e.sodium;
+    if (e.cholesterol !== null && e.cholesterol !== undefined) panel.chol = e.cholesterol;
+    return Object.keys(panel).length ? panel : null;
+  }
+
+  $('addLinkGo').addEventListener('click', readLink);
+  $('addLinkUrl').addEventListener('keydown', function (ev) {
+    if (ev.key === 'Enter') { ev.preventDefault(); readLink(); }
+  });
+
+  /* By hand: the old inline panel, reached deliberately now. */
+  function openManualFor(name) {
+    if (!name) { $('addManualName').focus(); return; }
+    $('inlineName').textContent = name;
+    $('inlineNew').hidden = false;
+    ['inServing', 'inKcal', 'inP', 'inC', 'inF'].forEach(function (id) { $(id).value = ''; });
+    $('inKcal').focus();
+  }
+  $('addManualGo').addEventListener('click', function () {
+    openManualFor($('addManualName').value.trim());
+  });
+  $('addManualName').addEventListener('keydown', function (ev) {
+    if (ev.key === 'Enter') { ev.preventDefault(); $('addManualGo').click(); }
+  });
+  /* The still-photo route, promoted out of the scanner overlay. The
+     live preview is the part that struggles — a moving frame, autofocus
+     hunting, and a decoder that gets one shot per frame. A sharp still
+     gives the decoder a whole image to work on and lands far more
+     often, so it belongs beside the camera button rather than hidden
+     behind a failure. */
+  $('scanPhotoBtn').addEventListener('click', function () {
+    $('photoBarcodeFile').click();
+  });
+
+  /* ---------------------------------------------------------------
      A RECIPE FROM A LINK
 
      What comes back lands in the ordinary add-a-recipe form rather
@@ -3149,16 +3350,7 @@
          is a partial panel, which is worth keeping: coverage reporting
          exists precisely so partial data can be counted honestly
          rather than discarded. */
-      pendingMicros = null;
-      if (r.extras && typeof Micros !== 'undefined') {
-        var e = r.extras, panel = {};
-        if (e.fiber !== null && e.fiber !== undefined) panel.fiber = e.fiber;
-        if (e.sugar !== null && e.sugar !== undefined) panel.sugar = e.sugar;
-        if (e.satFat !== null && e.satFat !== undefined) panel.satFat = e.satFat;
-        if (e.sodium !== null && e.sodium !== undefined) panel.sodium = e.sodium;
-        if (e.cholesterol !== null && e.cholesterol !== undefined) panel.chol = e.cholesterol;
-        if (Object.keys(panel).length) pendingMicros = panel;
-      }
+      pendingMicros = r.micros || microsFromExtras(r.extras);
 
       $('newFoodCard').hidden = false;
       $('newFoodCard').scrollIntoView({ block: 'center', behavior: 'smooth' });

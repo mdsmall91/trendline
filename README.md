@@ -397,7 +397,7 @@ node tests/sync-tests.js     # 101 — merge logic, wire format, session safety
 node tests/food-tests.js     #  93 — food lookup normalizers and library ranking
 node tests/gym-tests.js      #  42 — catalog search, substitution, real loads
 node tests/progress-tests.js #  77 — e1RM, RIR, load selection, the rules
-node tests/recipe-tests.js   # 100 — recipe reading, against four real pages
+node tests/recipe-tests.js   # 123 — reading a page, declared and otherwise
 node tests/units-tests.js    #  63 — unit conversion, and what it refuses
 node tests/micro-tests.js    #  69 — micronutrients, units, and coverage
 node tests/plate-tests.js    #  44 — reading a photographed meal, and what it drops

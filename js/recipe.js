@@ -319,14 +319,16 @@ var Recipe = (function () {
     if (r.reason === 'no-recipe') return 'That page has no recipe data in it.';
     if (r.reason === 'no-nutrition') return 'That recipe does not publish nutrition. Name and servings filled in; the numbers are yours to add.';
     var bits = [];
-    bits.push('Per serving' + (r.kcalDerived ? ', calories from the macros' : ''));
+    bits.push((r.source === 'read' ? 'Read off the page' : 'Per serving') +
+      (r.kcalDerived ? ', calories from the macros' : ''));
     if (r.servings) {
       bits.push(r.servingsConfident
         ? 'makes ' + r.servings
         : 'yield reads "' + r.yieldText + '", so check the serving count');
     }
     if (r.missing && r.missing.length) bits.push('missing ' + r.missing.join(' and '));
-    return bits.join('  ·  ') + '.';
+    if (r.source === 'read') bits.push('check it against the page');
+    return bits.join('  ·  ') + '.' + (r.note ? ' ' + r.note : '');
   }
 
   /* ---------------------------------------------------------------
@@ -390,18 +392,122 @@ var Recipe = (function () {
         return body;
       });
     }).then(function (body) {
-      return fromBlocks(body.blocks || [], body.url || url);
+      var out = fromBlocks(body.blocks || [], body.url || url);
+      /* Carried so the caller can fall back to reading the prose when
+         the page declared nothing usable. Kept out of fromBlocks, which
+         stays pure and testable. */
+      out.pageText = body.text || '';
+      out.pageTitle = body.title || '';
+      return out;
     });
+  }
+
+  /* ---------------------------------------------------------------
+     WHEN THE PAGE DECLARES NOTHING
+
+     Most pages that state nutrition are not recipes and publish no
+     structured data at all — a restaurant's allergen table, a
+     manufacturer's product page, a supplement label. The numbers are
+     printed right there; they are simply not machine-readable.
+
+     So the text goes to the same reader that handles plate photos,
+     with a schema of its own. What comes back is explicitly weaker
+     than a declared field and is labelled as such the whole way
+     through: source 'read', never merged silently with the exact kind.
+     --------------------------------------------------------------- */
+
+  function readPage(url, text) {
+    var c = (typeof CONFIG !== 'undefined' && CONFIG) || {};
+    if (!c.SUPABASE_URL) return Promise.reject(new Error('Sync is not set up.'));
+    if (typeof Sync === 'undefined' || !Sync.signedIn()) {
+      return Promise.reject(new Error('Sign in first — the reader runs on your own account.'));
+    }
+    if (!text) return Promise.reject(new Error('That page had no readable text.'));
+
+    return Sync.accessToken().then(function (token) {
+      return fetch(c.SUPABASE_URL.replace(/\/+$/, '') + '/functions/v1/plate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + token,
+          'apikey': c.SUPABASE_ANON_KEY
+        },
+        body: JSON.stringify({ text: text, url: url })
+      });
+    }).then(function (res) {
+      return res.json().catch(function () { return {}; }).then(function (body) {
+        if (!res.ok) throw new Error(body.error || 'The page could not be read.');
+        return fromRead(body.food, url);
+      });
+    });
+  }
+
+  /* The reader's answer, in the same shape fromBlocks produces, so the
+     UI has one thing to render either way. */
+  var MICRO_FIELDS = ['fiber', 'sugar', 'addedSugar', 'satFat', 'sodium',
+    'chol', 'potassium', 'calcium', 'iron', 'vitC', 'vitD'];
+
+  function fromRead(food, url) {
+    if (!food || food.found === false) {
+      return { ok: false, reason: 'no-nutrition', name: (food && food.name) || '', url: url || null,
+        servings: null, servingsConfident: false, yieldText: '', source: 'read',
+        note: (food && food.note) || '' };
+    }
+    var per = {
+      kcal: qty(food.kcal), protein: qty(food.protein),
+      carbs: qty(food.carbs), fat: qty(food.fat)
+    };
+    var derived = false;
+    if (per.kcal === null && per.protein !== null && per.carbs !== null && per.fat !== null) {
+      per.kcal = per.protein * ATWATER.protein + per.carbs * ATWATER.carbs + per.fat * ATWATER.fat;
+      derived = true;
+    }
+    var missing = [];
+    if (per.kcal === null) missing.push('calories');
+    if (per.protein === null) missing.push('protein');
+    if (per.carbs === null) missing.push('carbs');
+    if (per.fat === null) missing.push('fat');
+
+    var micros = {};
+    MICRO_FIELDS.forEach(function (k) {
+      var v = qty(food[k]);
+      if (v !== null) micros[k] = v;
+    });
+
+    return {
+      ok: missing.length === 0,
+      reason: missing.length ? 'incomplete' : null,
+      name: typeof food.name === 'string' ? food.name.trim() : '',
+      url: url || null,
+      per: {
+        kcal: round(per.kcal, 0), protein: round(per.protein, 1),
+        carbs: round(per.carbs, 1), fat: round(per.fat, 1)
+      },
+      kcalDerived: derived,
+      servings: qty(food.servings),
+      servingsConfident: qty(food.servings) !== null,
+      yieldText: '',
+      servingLabel: (typeof food.serving === 'string' && food.serving.trim())
+        ? food.serving.trim() : '1 serving',
+      extras: null,
+      micros: Object.keys(micros).length ? micros : null,
+      /* The distinction that matters. 'declared' came out of a field the
+         site published; 'read' came out of its prose. They are not the
+         same kind of fact and the app never lets them look alike. */
+      source: 'read',
+      note: food.note || '',
+      missing: missing
+    };
   }
 
   return {
     /* pure — unit tested in tests/recipe-tests.html */
     qty: qty, mg: mg, parseBlock: parseBlock, findRecipe: findRecipe,
     servingsFrom: servingsFrom, recipeFromBlocks: recipeFromBlocks,
-    normalize: normalize, fromBlocks: fromBlocks, summary: summary,
+    normalize: normalize, fromBlocks: fromBlocks, summary: summary, fromRead: fromRead,
     looksLikeUrl: looksLikeUrl, tidyUrl: tidyUrl,
     /* network */
-    endpoint: endpoint, lookup: lookup
+    endpoint: endpoint, lookup: lookup, readPage: readPage
   };
 })();
 

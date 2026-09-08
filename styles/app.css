@@ -573,3 +573,38 @@ code {
    distinction is the whole point of allowing the swap. */
 .src { font-size: 0.625rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-faint); }
 .src.usda { color: var(--accent); }
+
+
+/* ---------- the add-food sheet ----------
+
+   Same shape as the scanner overlay, but scrollable: it holds whichever
+   panel is in play, and some of them are tall. */
+
+.sheet {
+  position: fixed; inset: 0; z-index: 55;
+  background: oklch(0.14 0.01 70 / 0.94);
+  display: flex; align-items: flex-end; justify-content: center;
+}
+.sheet-in {
+  width: 100%; max-width: 560px; max-height: 92vh;
+  display: flex; flex-direction: column;
+  background: var(--paper);
+  border: var(--hairline); border-bottom: 0;
+  border-radius: var(--radius) var(--radius) 0 0;
+  padding: var(--s-4);
+  padding-bottom: max(var(--s-4), env(safe-area-inset-bottom));
+}
+@media (min-width: 640px) {
+  .sheet { align-items: center; }
+  .sheet-in { border-bottom: var(--hairline); border-radius: var(--radius); }
+}
+.sheet-head {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: var(--s-3);
+}
+.sheet-head b { font-family: var(--font-display); font-size: 1.0625rem; }
+.sheet-body { overflow-y: auto; margin-top: var(--s-4); }
+
+/* Panels inside the sheet are already cards elsewhere in the page; in
+   here they are the content, so the card chrome comes off. */
+.sheet-body .card { border: 0; padding: 0; margin: var(--s-4) 0 0; background: none; }

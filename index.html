@@ -97,7 +97,10 @@
   </div>
 
   <div class="card">
-    <h2>Food</h2>
+    <div class="row" style="align-items:center;margin-bottom:var(--s-3)">
+      <h2 style="margin:0;flex:1">Food</h2>
+      <button class="btn primary grow-0" id="openAdd" aria-label="More ways to add">+</button>
+    </div>
     <!-- The box you type in comes before the list of what you already
          ate. It used to come after, which read nicely on an empty day
          and got worse with every entry: by dinner the one control you
@@ -128,95 +131,8 @@
         <button class="btn primary grow-0" id="unitLearnSave">Save</button>
       </div>
       <div class="hint" id="unitNote"></div>
-      <div class="row" style="margin-top:var(--s-2)">
-        <button class="btn grow-0" id="scanBarcode">Scan barcode</button>
-        <button class="btn grow-0" id="scanPlate">Scan a plate</button>
-        <button class="btn" id="searchOnline">Look it up</button>
-        <input type="file" id="platePhoto" accept="image/*" capture="environment" hidden>
-      </div>
-
-      <!-- What came back from the photograph. Editable, and logged only
-           when the person says so: a portion read off a photo is an
-           estimate, and an estimate written straight into the calorie
-           history would quietly poison everything computed from it. -->
-      <div class="card" id="plateCard" hidden style="margin:var(--s-3) 0 0;background:var(--paper)">
-        <div class="row" style="align-items:center;margin-bottom:var(--s-2)">
-          <h2 style="margin:0;flex:1">On the plate</h2>
-          <button class="btn ghost grow-0" id="plateClose" aria-label="Close">&times;</button>
-        </div>
-        <div class="hint" id="plateStatus"></div>
-        <ul class="list" id="plateItems"></ul>
-        <div class="row" style="margin-top:var(--s-3)">
-          <button class="btn primary" id="plateLogAll">Log these</button>
-        </div>
-        <div class="hint" id="plateFooter"></div>
-      </div>
-      <div id="lookupPanel" hidden>
-        <div class="hint" id="lookupStatus"></div>
-        <ul class="list" id="lookupResults"></ul>
-      </div>
-      <div class="card" id="foodEdit" hidden style="margin:var(--s-3) 0 0;background:var(--paper)">
-        <h2 id="feTitle">Amount</h2>
-        <!-- The same amount-and-unit control as the main food row, on
-             purpose. This card used to be a grams box with no unit at
-             all, so anything looked up from USDA was stuck at 100 g. -->
-        <div class="row">
-          <label class="field grow-0" style="margin:0;width:92px"><span>How much</span>
-            <input type="text" id="feAmount" inputmode="decimal" value="1"></label>
-          <label class="field" style="margin:0"><span>Unit</span>
-            <select id="feUnit"></select></label>
-        </div>
-        <div class="row" id="feLearn" hidden style="margin-top:var(--s-2)">
-          <label class="field" style="margin:0"><span id="feLearnLabel">One serving is</span>
-            <input type="text" id="feLearnValue" inputmode="decimal"></label>
-          <button class="btn primary grow-0" id="feLearnSave">Save</button>
-        </div>
-        <div class="row">
-          <label class="field"><span>Cal</span><input type="number" id="feKcal" inputmode="numeric"></label>
-          <label class="field"><span>P (g)</span><input type="number" id="feP" inputmode="decimal"></label>
-          <label class="field"><span>C (g)</span><input type="number" id="feC" inputmode="decimal"></label>
-          <label class="field"><span>F (g)</span><input type="number" id="feF" inputmode="decimal"></label>
-        </div>
-        <div class="row">
-          <button class="btn primary" id="feSave">Log it</button>
-          <button class="btn grow-0" id="feCancel">Cancel</button>
-        </div>
-        <div class="hint" id="feHint"></div>
-      </div>
-      <!-- Quick add is for the meal you are never going to log properly:
-           a restaurant plate, someone's birthday cake. It needs a name,
-           because "Quick add · 650" tells you nothing a week later when
-           you are trying to work out where a day went. -->
-      <!-- One panel for anything not already in the library. It is also
-           where the old "quick add" lives now: calories alone, logged
-           once, nothing saved. Two boxes in two places for the same
-           act was the confusing part. -->
-      <div class="card" id="inlineNew" hidden style="margin:var(--s-3) 0 0;background:var(--paper)">
-        <h2>New &mdash; <span id="inlineName"></span></h2>
-        <label class="field"><span>One serving is</span>
-          <input type="text" id="inServing" placeholder="1 cup, 226 g, 2 tbsp — or leave blank"></label>
-        <div class="row">
-          <label class="field"><span>Cal</span><input type="number" id="inKcal" inputmode="numeric"></label>
-          <label class="field"><span>P (g)</span><input type="number" id="inP" inputmode="decimal"></label>
-          <label class="field"><span>C (g)</span><input type="number" id="inC" inputmode="decimal"></label>
-          <label class="field"><span>F (g)</span><input type="number" id="inF" inputmode="decimal"></label>
-        </div>
-        <!-- Typing macros by hand gets you calories and nothing else:
-             no vitamins, no minerals, and a food that drags the
-             micronutrient coverage down every time you eat it. Both
-             routes that bring a full panel with them belong here, at
-             the moment the choice is actually being made. -->
-        <div class="row" style="margin-bottom:var(--s-2)">
-          <button class="btn" id="inLookup">Look it up instead</button>
-          <button class="btn grow-0" id="inScan">Scan barcode</button>
-        </div>
-        <div class="row">
-          <button class="btn primary" id="inSave">Save &amp; log it</button>
-          <button class="btn" id="inOnce">Log once</button>
-          <button class="btn grow-0" id="inCancel">Cancel</button>
-        </div>
-      </div>
-      <div class="hint" id="foodHint">Type a name you've logged before and it fills itself in. A new name asks for its macros once, then joins your library. Scan a package or look it up and the macros arrive filled in.</div>
+      <div class="hint" id="foodHint">Type a name you have logged before and it fills itself in. Anything
+        else &mdash; a barcode, a link, a photo, a name to look up &mdash; is behind the + above.</div>
     </div>
     <ul class="list" id="foodLog" style="margin-top:var(--s-4)"></ul>
   </div>
@@ -713,6 +629,175 @@
 </nav>
 
 <!-- ============================ SCANNER ============================ -->
+<!-- ============================ ADD FOOD ============================
+
+     One page had grown six ways to log a meal, all visible at once, and
+     five of them were wrong on any given occasion. The common case —
+     something eaten before, by name — stays on the page. Everything
+     else lives here, one route at a time, chosen deliberately.
+
+     The panels are the same elements as before, moved rather than
+     rebuilt, so every behaviour they already had still applies. -->
+<div class="sheet" id="addSheet" hidden>
+  <div class="sheet-in">
+    <div class="sheet-head">
+      <b>Add food</b>
+      <button class="btn ghost grow-0" id="addClose" aria-label="Close">&times;</button>
+    </div>
+
+    <div class="seg" id="addSeg">
+      <button data-add="search" aria-pressed="true">Search</button>
+      <button data-add="link" aria-pressed="false">Link</button>
+      <button data-add="scan" aria-pressed="false">Barcode</button>
+      <button data-add="photo" aria-pressed="false">Photo</button>
+      <button data-add="manual" aria-pressed="false">By hand</button>
+    </div>
+
+    <div class="sheet-body">
+
+      <!-- SEARCH: your library first, then USDA -->
+      <div class="add-pane" id="addSearchPane">
+        <div class="row">
+          <label class="field" style="margin:0"><span class="sr">What to look for</span>
+            <input type="text" id="addSearchText" autocomplete="off"
+                   placeholder="chicken thigh, greek yogurt&hellip;"></label>
+          <button class="btn primary grow-0" id="searchOnline">Search</button>
+        </div>
+        <div class="hint">Yours first, then USDA. USDA is generic and hit and miss on brands &mdash;
+          when it misses, a link or a barcode usually does better.</div>
+      </div>
+
+      <!-- LINK: any page that states nutrition -->
+      <div class="add-pane" id="addLinkPane" hidden>
+        <div class="row">
+          <label class="field" style="margin:0"><span class="sr">Page address</span>
+            <input type="url" id="addLinkUrl" inputmode="url" autocomplete="off"
+                   autocapitalize="off" placeholder="https://&hellip;"></label>
+          <button class="btn primary grow-0" id="addLinkGo">Read</button>
+        </div>
+        <div class="hint" id="addLinkHint">Paste a recipe, a restaurant nutrition page, a product page.
+          Published figures are read exactly; anything else is read from the page text and marked as
+          an estimate you should check.</div>
+      </div>
+
+      <!-- BARCODE -->
+      <div class="add-pane" id="addScanPane" hidden>
+        <div class="row">
+          <button class="btn primary" id="scanBarcode">Open the camera</button>
+          <button class="btn grow-0" id="scanPhotoBtn">Use a photo</button>
+        </div>
+        <div class="hint">Hold the bars square to the frame and fill the width. If it will not catch,
+          take a still photo instead &mdash; a sharp still beats a moving preview every time.</div>
+      </div>
+
+      <!-- PHOTO OF A PLATE -->
+      <div class="add-pane" id="addPhotoPane" hidden>
+        <div class="row">
+          <button class="btn primary" id="scanPlate">Photograph the plate</button>
+          <input type="file" id="platePhoto" accept="image/*" capture="environment" hidden>
+        </div>
+        <div class="hint">Identifies the foods well and weighs them badly &mdash; check every amount
+          before logging. Each row can be swapped for real database figures.</div>
+      </div>
+
+      <!-- BY HAND -->
+      <div class="add-pane" id="addManualPane" hidden>
+        <div class="row">
+          <label class="field" style="margin:0"><span class="sr">Name</span>
+            <input type="text" id="addManualName" autocomplete="off"
+                   placeholder="What was it?"></label>
+          <button class="btn primary grow-0" id="addManualGo">Next</button>
+        </div>
+        <div class="hint">For the restaurant plate you will never log properly. Calories alone is
+          allowed &mdash; a rough number beats a missing day.</div>
+      </div>
+
+
+      <!-- What came back from the photograph. Editable, and logged only
+           when the person says so: a portion read off a photo is an
+           estimate, and an estimate written straight into the calorie
+           history would quietly poison everything computed from it. -->
+      <div class="card" id="plateCard" hidden style="margin:var(--s-3) 0 0;background:var(--paper)">
+        <div class="row" style="align-items:center;margin-bottom:var(--s-2)">
+          <h2 style="margin:0;flex:1">On the plate</h2>
+          <button class="btn ghost grow-0" id="plateClose" aria-label="Close">&times;</button>
+        </div>
+        <div class="hint" id="plateStatus"></div>
+        <ul class="list" id="plateItems"></ul>
+        <div class="row" style="margin-top:var(--s-3)">
+          <button class="btn primary" id="plateLogAll">Log these</button>
+        </div>
+        <div class="hint" id="plateFooter"></div>
+      </div>
+      <div id="lookupPanel" hidden>
+        <div class="hint" id="lookupStatus"></div>
+        <ul class="list" id="lookupResults"></ul>
+      </div>
+      <div class="card" id="foodEdit" hidden style="margin:var(--s-3) 0 0;background:var(--paper)">
+        <h2 id="feTitle">Amount</h2>
+        <!-- The same amount-and-unit control as the main food row, on
+             purpose. This card used to be a grams box with no unit at
+             all, so anything looked up from USDA was stuck at 100 g. -->
+        <div class="row">
+          <label class="field grow-0" style="margin:0;width:92px"><span>How much</span>
+            <input type="text" id="feAmount" inputmode="decimal" value="1"></label>
+          <label class="field" style="margin:0"><span>Unit</span>
+            <select id="feUnit"></select></label>
+        </div>
+        <div class="row" id="feLearn" hidden style="margin-top:var(--s-2)">
+          <label class="field" style="margin:0"><span id="feLearnLabel">One serving is</span>
+            <input type="text" id="feLearnValue" inputmode="decimal"></label>
+          <button class="btn primary grow-0" id="feLearnSave">Save</button>
+        </div>
+        <div class="row">
+          <label class="field"><span>Cal</span><input type="number" id="feKcal" inputmode="numeric"></label>
+          <label class="field"><span>P (g)</span><input type="number" id="feP" inputmode="decimal"></label>
+          <label class="field"><span>C (g)</span><input type="number" id="feC" inputmode="decimal"></label>
+          <label class="field"><span>F (g)</span><input type="number" id="feF" inputmode="decimal"></label>
+        </div>
+        <div class="row">
+          <button class="btn primary" id="feSave">Log it</button>
+          <button class="btn grow-0" id="feCancel">Cancel</button>
+        </div>
+        <div class="hint" id="feHint"></div>
+      </div>
+      <!-- Quick add is for the meal you are never going to log properly:
+           a restaurant plate, someone's birthday cake. It needs a name,
+           because "Quick add · 650" tells you nothing a week later when
+           you are trying to work out where a day went. -->
+      <!-- One panel for anything not already in the library. It is also
+           where the old "quick add" lives now: calories alone, logged
+           once, nothing saved. Two boxes in two places for the same
+           act was the confusing part. -->
+      <div class="card" id="inlineNew" hidden style="margin:var(--s-3) 0 0;background:var(--paper)">
+        <h2>New &mdash; <span id="inlineName"></span></h2>
+        <label class="field"><span>One serving is</span>
+          <input type="text" id="inServing" placeholder="1 cup, 226 g, 2 tbsp — or leave blank"></label>
+        <div class="row">
+          <label class="field"><span>Cal</span><input type="number" id="inKcal" inputmode="numeric"></label>
+          <label class="field"><span>P (g)</span><input type="number" id="inP" inputmode="decimal"></label>
+          <label class="field"><span>C (g)</span><input type="number" id="inC" inputmode="decimal"></label>
+          <label class="field"><span>F (g)</span><input type="number" id="inF" inputmode="decimal"></label>
+        </div>
+        <!-- Typing macros by hand gets you calories and nothing else:
+             no vitamins, no minerals, and a food that drags the
+             micronutrient coverage down every time you eat it. Both
+             routes that bring a full panel with them belong here, at
+             the moment the choice is actually being made. -->
+        <div class="row" style="margin-bottom:var(--s-2)">
+          <button class="btn" id="inLookup">Look it up instead</button>
+          <button class="btn grow-0" id="inScan">Scan barcode</button>
+        </div>
+        <div class="row">
+          <button class="btn primary" id="inSave">Save &amp; log it</button>
+          <button class="btn" id="inOnce">Log once</button>
+          <button class="btn grow-0" id="inCancel">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="scanner" id="scannerOverlay" hidden>
   <div class="scanner-in">
     <div class="scanner-head">
