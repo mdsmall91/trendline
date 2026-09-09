@@ -68,9 +68,14 @@
     <div class="bar" id="budgetBar"><i style="width:0%"></i></div>
     <div class="split">
       <div>eaten<b id="eaten">0</b></div>
-      <div>target<b id="target">—</b></div>
+      <!-- Where the target came from is a fact worth being able to
+           get at and not worth three lines of grey type under the
+           number every time you open the app. It is on the target
+           itself now: tap it and it says. -->
+      <button class="splitbtn" id="targetToggle" aria-expanded="false"
+              aria-controls="targetBasis">target<b id="target">—</b></button>
     </div>
-    <div class="hint" id="targetBasis"></div>
+    <div class="hint" id="targetBasis" hidden></div>
   </div>
 
   <!-- QUICK ADD
@@ -137,8 +142,6 @@
     <div class="row" style="margin-top:var(--s-3)">
       <button class="btn tap" id="openAdd">Add food another way</button>
     </div>
-    <div class="hint" id="foodHint">A name you have logged before fills itself in. A barcode, a link,
-      a photo, or a USDA search is behind <b>Add food another way</b>.</div>
 
     <ul class="list" id="foodLog" style="margin-top:var(--s-4)"></ul>
   </div>
@@ -884,7 +887,6 @@
           <input type="text" id="feLearnValue" inputmode="decimal"></label>
         <button class="btn primary grow-0 tap" id="feLearnSave">Save</button>
       </div>
-      <div class="hint" id="feLearnNote"></div>
       <div class="row">
         <label class="field"><span>Cal</span><input type="number" id="feKcal" inputmode="numeric"></label>
         <label class="field"><span>P (g)</span><input type="number" id="feP" inputmode="decimal"></label>
@@ -895,7 +897,6 @@
         <button class="btn primary tap" id="feSave">Log it</button>
         <button class="btn grow-0 tap" id="feCancel">Cancel</button>
       </div>
-      <div class="hint" id="feHint"></div>
     </div>
   </div>
 </div>

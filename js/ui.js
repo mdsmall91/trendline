@@ -14,7 +14,7 @@
   /* Bumped by hand on each deploy, and shown under Setup → Version.
      Its only job is to let "it still looks old" be answered with a
      number instead of a guess. Keep it in step with CACHE in sw.js. */
-  var BUILD = '2026-09-09.29';
+  var BUILD = '2026-09-09.30';
 
   /* THE HALF-DEPLOYED PAGE
 
@@ -226,6 +226,7 @@
     var pct = (tgt && tgt > 0) ? Math.min(100, (eaten.kcal / tgt) * 100) : 0;
     $('budgetBar').classList.toggle('over', left !== null && left < 0);
     $('budgetBar').firstElementChild.style.width = pct + '%';
+    /* Written on every render, shown only when asked for. */
     $('targetBasis').textContent = basisText(D);
 
     var m = D.macros, mm = [
@@ -243,10 +244,11 @@
     if (document.activeElement !== $('weightInput')) {
       $('weightInput').value = (d && typeof d.weight === 'number') ? d.weight : '';
     }
+    /* The trend on this day is a fact about the day. The advice about
+       how to weigh yourself was a fact about the first morning, and it
+       sat there every morning after. */
     var tr = D.series.length ? WL.trendAt(D.series, day) : null;
-    $('weightHint').textContent = tr === null
-      ? 'Weigh in first thing, after the bathroom, before food. Same conditions every day is what makes the trend mean anything.'
-      : 'Trend on this day: ' + fmt(tr, 1) + ' lb';
+    $('weightHint').textContent = tr === null ? '' : 'Trend on this day: ' + fmt(tr, 1) + ' lb';
 
     /* A weigh-in happens once and is then done. Leaving its form open
        underneath the answer costs half a card of the space the things
@@ -306,7 +308,10 @@
   }
 
   /* Says out loud where the target came from. A number you cannot
-     explain is a number you stop trusting in week three. */
+     explain is a number you stop trusting in week three — so this text
+     has not gone anywhere, it has stopped being permanent furniture.
+     It is one tap from the number it explains, which is where somebody
+     asking the question would look for it. */
   function basisText(D) {
     if (!D.hasWeight) return 'Add a weigh-in to start the adaptive loop.';
     if (D.target.manual) {
@@ -512,8 +517,7 @@
       return;
     }
 
-    $('pickStatus').textContent =
-      'Yours — tap to log at the amount shown, or the pencil to change it.';
+    $('pickStatus').textContent = '';
     $('pickResults').innerHTML = pickRows.map(function (f, i) {
       var u = usualFor(f.id);
       var kcal = (f.kcal === null || f.kcal === undefined) ? null : f.kcal * u.qty;
@@ -893,7 +897,7 @@
     $('waterHint').textContent = goal <= 0
       ? 'No goal set. Setup \u2192 Water and steps.'
       : (left > 0
-        ? fmt(left) + ' oz to go. A pint glass is about 16.'
+        ? fmt(left) + ' oz to go'
         : (oz === goal ? 'Goal met.' : 'Goal met, ' + fmt(oz - goal) + ' oz past it.'));
   }
 
@@ -1640,7 +1644,6 @@
 
     var needs = (b && Units.servingsPerUnit(b, feUnitChoice) === null) ? feUnitChoice : null;
     $('feLearn').hidden = !needs;
-    $('feLearnNote').textContent = '';
     if (needs) {
       var asMass = (needs === 'g' || needs === 'oz');
       /* The question names the macros it applies to, because on its
@@ -1659,12 +1662,6 @@
         : (macro ? macro + ' — how many cups is that?' : 'One serving is, in cups');
       $('feLearnValue').value = '';
       $('feLearnValue').placeholder = asMass ? '226' : '0.5';
-      $('feLearnNote').textContent = asMass
-        ? 'The weight those calories are for — usually the serving size on the tub. ' +
-          'Answer once and grams and ounces both work from then on. Leave it and this food ' +
-          'stays loggable in servings.'
-        : 'The amount those calories are for, as a fraction of a cup. Leave it and this food ' +
-          'stays loggable in servings.';
     }
   }
 
@@ -1742,9 +1739,6 @@
     feRecompute();
 
     $('feSave').textContent = 'Log it';
-    $('feHint').textContent = 'Stated as ' + (rec.serving || '1 serving') +
-      '. Change the amount or the unit and the numbers follow — or type over any of them.' +
-      (rec.micros ? ' Micronutrients came with it.' : '');
     openAmountSheet();
   }
 
@@ -1767,8 +1761,6 @@
     feRenderUnits();
     feRecompute();
     $('feSave').textContent = 'Log it';
-    $('feHint').textContent = (f.serving ? 'One serving is ' + f.serving + '. ' : '') +
-      'Change the amount or the unit and the numbers follow.';
     openAmountSheet();
   }
 
@@ -1798,8 +1790,6 @@
     feRecompute();
 
     $('feSave').textContent = 'Save';
-    $('feHint').textContent = 'Change the amount or the unit and the numbers follow. ' +
-      'Type over any of them to correct what was logged.';
     lookup.open = false; renderLookup();
     openAmountSheet();
   }
@@ -2275,6 +2265,12 @@
   $('prevDay').addEventListener('click', function () { goToDay(WL.addDays(day, -1)); });
   $('nextDay').addEventListener('click', function () {
     if (day < WL.todayKey()) goToDay(WL.addDays(day, 1));
+  });
+
+  $('targetToggle').addEventListener('click', function () {
+    var opening = $('targetBasis').hidden;
+    $('targetBasis').hidden = !opening;
+    $('targetToggle').setAttribute('aria-expanded', String(opening));
   });
 
   $('syncPill').addEventListener('click', function () {
