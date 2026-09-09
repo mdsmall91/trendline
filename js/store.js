@@ -833,6 +833,111 @@ var Store = (function () {
       .map(function (x) { return x.f; });
   }
 
+  /* ---------------------------------------------------------------
+     WHAT YOU ACTUALLY EAT
+
+     The library is long and alphabetical. The list of foods a person
+     eats in a given week is short and repeats, and it is the second
+     list that belongs on the front page — a strip you tap rather than
+     a box you type into.
+
+     Ranking is frequency discounted by age. Frequency alone floats a
+     food eaten daily last March above the one eaten every morning
+     since; recency alone floats last night's one-off restaurant plate
+     above breakfast. So each log counts a full point on the day it
+     happened and half a point every HALF_LIFE days after.
+
+     The amount comes back with it, because "Coffee" is not the useful
+     unit of recall. "Coffee, 12 oz" is: it is the thing that can be
+     logged without deciding anything.
+     --------------------------------------------------------------- */
+
+  var RECENT_WINDOW_DAYS = 90;
+  var RECENT_HALF_LIFE_DAYS = 14;
+
+  /* Day keys are YYYY-MM-DD and are compared as days rather than as
+     timestamps, built at UTC noon so no daylight-saving boundary can
+     shift one into the day before. */
+  function dayNumber(key) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(key || ''));
+    if (!m) return null;
+    return Math.floor(Date.UTC(+m[1], +m[2] - 1, +m[3], 12) / 86400000);
+  }
+
+  function rankRecent(entryList, foodList, opts) {
+    opts = opts || {};
+    var on = dayNumber(opts.on);
+    if (on === null) return [];
+    var windowDays = opts.windowDays || RECENT_WINDOW_DAYS;
+    var halfLife = opts.halfLife || RECENT_HALF_LIFE_DAYS;
+
+    var byId = {};
+    (foodList || []).forEach(function (f) { if (f && f.id) byId[f.id] = f; });
+
+    var groups = {}, order = [];
+    (entryList || []).forEach(function (e) {
+      /* A line with no food behind it — a "log once" restaurant plate —
+         has nothing to re-log: no serving, no macros to refresh, nothing
+         the library can carry forward. It stays in the day it was
+         eaten. */
+      if (!e || !e.foodId || !byId[e.foodId]) return;
+      var d = dayNumber(e.date);
+      if (d === null) return;
+      var age = on - d;
+      /* Days after the one being looked at are somebody else's future.
+         Backfilling Saturday should be ranked by the week up to
+         Saturday, not by what got eaten on the Monday after. */
+      if (age < 0 || age > windowDays) return;
+
+      var w = Math.pow(0.5, age / halfLife);
+      var g = groups[e.foodId];
+      if (!g) {
+        g = groups[e.foodId] = {
+          food: byId[e.foodId], score: 0, count: 0,
+          lastDay: -Infinity, lastDate: null, amounts: {}
+        };
+        order.push(e.foodId);
+      }
+      g.score += w;
+      g.count += 1;
+      if (d > g.lastDay) { g.lastDay = d; g.lastDate = e.date; }
+
+      /* The usual amount, scored the same way: the size reached for
+         most, not whichever was last and odd. */
+      var amount = (typeof e.amount === 'number' && e.amount > 0) ? e.amount
+        : ((typeof e.qty === 'number' && e.qty > 0) ? e.qty : 1);
+      var unit = e.unit || 'serving';
+      var qty = (typeof e.qty === 'number' && e.qty > 0) ? e.qty : amount;
+      var key = amount + '|' + unit;
+      var a = g.amounts[key];
+      if (!a) a = g.amounts[key] = { amount: amount, unit: unit, qty: qty, score: 0, lastDay: -Infinity };
+      a.score += w;
+      if (d > a.lastDay) { a.lastDay = d; a.qty = qty; }
+    });
+
+    return order.map(function (id) {
+      var g = groups[id], usual = null;
+      Object.keys(g.amounts).forEach(function (k) {
+        var a = g.amounts[k];
+        if (!usual || a.score > usual.score ||
+          (a.score === usual.score && a.lastDay > usual.lastDay)) usual = a;
+      });
+      return {
+        foodId: id, food: g.food, name: g.food.name,
+        amount: usual.amount, unit: usual.unit, qty: usual.qty,
+        count: g.count, score: g.score, lastDate: g.lastDate
+      };
+    }).sort(function (a, b) {
+      if (a.score !== b.score) return b.score - a.score;
+      return String(a.name).toLowerCase() < String(b.name).toLowerCase() ? -1 : 1;
+    });
+  }
+
+  function recentFoods(on, limit) {
+    var out = rankRecent(alive(load().entries), foods(), { on: on });
+    return limit ? out.slice(0, limit) : out;
+  }
+
   function searchLibrary(query, limit) {
     var out = rankLibrary(foods(), query);
     return limit ? out.slice(0, limit) : out;
@@ -952,6 +1057,8 @@ var Store = (function () {
     workoutsFor: workoutsFor, addWorkout: addWorkout, removeWorkout: removeWorkout,
     setSteps: setSteps, stepsOn: stepsOn,
     rankLibrary: rankLibrary, searchLibrary: searchLibrary,
+    rankRecent: rankRecent, recentFoods: recentFoods,
+    dayNumber: dayNumber,
     plans: plans, plan: plan, savePlan: savePlan, removePlan: removePlan,
     programsUsing: programsUsing,
     startSession: startSession, logSet: logSet, finishSession: finishSession,

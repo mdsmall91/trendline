@@ -290,6 +290,126 @@
   check('a food with no name does not throw',
     Store.rankLibrary([{ id: 'x' }, { id: 'y', name: 'Chicken' }], 'chicken').length === 1);
 
+  /* ---------- what you actually eat ----------
+
+     rankRecent is pure — it takes the entries and the library rather
+     than reading storage — so the ordering that drives the Quick add
+     strip can be checked without a browser.
+
+     The rule it implements: frequency, discounted by age. Each log is
+     worth a full point on the day it happened and half a point every
+     fourteen days after. */
+
+  var RFOODS = [
+    { id: 'coffee', name: 'Black coffee', kcal: 5 },
+    { id: 'bagel', name: 'Everything bagel', kcal: 290 },
+    { id: 'chicken', name: 'Chicken breast', kcal: 120 },
+    { id: 'oil', name: 'Olive oil', kcal: 119 }
+  ];
+
+  function ent(foodId, date, amount, unit, qty) {
+    return {
+      id: 'e_' + foodId + '_' + date + '_' + (amount || 1), foodId: foodId, date: date,
+      amount: amount, unit: unit, qty: qty, kcal: 1
+    };
+  }
+  function names(rows) { return rows.map(function (r) { return r.foodId; }).join(','); }
+
+  /* Recency beats a bigger but older count. Six logs a fortnight ago
+     are worth the same as three today, so four today wins. */
+  var recency = Store.rankRecent(
+    [ent('oil', '2026-08-26', 1, 'tbsp', 1), ent('oil', '2026-08-26', 1, 'tbsp', 1),
+     ent('oil', '2026-08-26', 1, 'tbsp', 1), ent('oil', '2026-08-26', 1, 'tbsp', 1),
+     ent('oil', '2026-08-26', 1, 'tbsp', 1), ent('oil', '2026-08-26', 1, 'tbsp', 1),
+     ent('coffee', '2026-09-09', 12, 'oz', 1), ent('coffee', '2026-09-09', 12, 'oz', 1),
+     ent('coffee', '2026-09-09', 12, 'oz', 1), ent('coffee', '2026-09-09', 12, 'oz', 1)],
+    RFOODS, { on: '2026-09-09' });
+  check('today outranks a fortnight ago at similar counts',
+    names(recency) === 'coffee,oil', names(recency));
+
+  /* But frequency still counts: one thing eaten today does not
+     displace a thing eaten every day this week. */
+  var freq = Store.rankRecent(
+    [ent('bagel', '2026-09-09', 1, 'serving', 1),
+     ent('coffee', '2026-09-09', 12, 'oz', 1), ent('coffee', '2026-09-08', 12, 'oz', 1),
+     ent('coffee', '2026-09-07', 12, 'oz', 1), ent('coffee', '2026-09-06', 12, 'oz', 1),
+     ent('coffee', '2026-09-05', 12, 'oz', 1)],
+    RFOODS, { on: '2026-09-09' });
+  check('a daily habit outranks one thing eaten once today',
+    names(freq) === 'coffee,bagel', names(freq));
+
+  /* The amount comes back with the food, and it is the usual one
+     rather than the last one. */
+  var usual = Store.rankRecent(
+    [ent('chicken', '2026-09-09', 170, 'g', 1.7), ent('chicken', '2026-09-08', 170, 'g', 1.7),
+     ent('chicken', '2026-09-07', 170, 'g', 1.7), ent('chicken', '2026-09-09', 400, 'g', 4)],
+    RFOODS, { on: '2026-09-09' });
+  check('the usual amount wins over an odd one on the same day',
+    usual[0].amount === 170 && usual[0].unit === 'g', usual[0].amount + usual[0].unit);
+  near('the servings come back with it', usual[0].qty, 1.7);
+  check('the count is every log, not the winning amount only',
+    usual[0].count === 4, usual[0].count);
+
+  /* A newer amount breaks a tie, because a change of portion is worth
+     following. */
+  var tie = Store.rankRecent(
+    [ent('chicken', '2026-09-01', 170, 'g', 1.7), ent('chicken', '2026-09-09', 220, 'g', 2.2)],
+    RFOODS, { on: '2026-09-09' });
+  check('a more recent amount outweighs an older one', tie[0].amount === 220, tie[0].amount);
+
+  /* Lines with nothing behind them cannot be re-logged: no serving, no
+     macros to refresh, nothing the library can carry forward. */
+  var orphan = Store.rankRecent(
+    [{ id: 'x', date: '2026-09-09', name: 'Birthday cake', qty: 1, kcal: 600 },
+     ent('coffee', '2026-09-09', 12, 'oz', 1)],
+    RFOODS, { on: '2026-09-09' });
+  check('a quick add with no food behind it is not offered',
+    names(orphan) === 'coffee', names(orphan));
+
+  var deleted = Store.rankRecent(
+    [ent('gone', '2026-09-09', 1, 'serving', 1), ent('coffee', '2026-09-09', 12, 'oz', 1)],
+    RFOODS, { on: '2026-09-09' });
+  check('a food deleted from the library is not offered',
+    names(deleted) === 'coffee', names(deleted));
+
+  /* Backfilling Saturday is ranked by the week up to Saturday. What
+     got eaten on the Monday after has not happened yet. */
+  var future = Store.rankRecent(
+    [ent('bagel', '2026-09-09', 1, 'serving', 1), ent('coffee', '2026-09-05', 12, 'oz', 1)],
+    RFOODS, { on: '2026-09-05' });
+  check('days after the one being logged are ignored',
+    names(future) === 'coffee', names(future));
+
+  var stale = Store.rankRecent(
+    [ent('oil', '2026-01-01', 1, 'tbsp', 1), ent('coffee', '2026-09-09', 12, 'oz', 1)],
+    RFOODS, { on: '2026-09-09' });
+  check('anything past the window drops off entirely',
+    names(stale) === 'coffee', names(stale));
+
+  /* Older entries predate amount and unit being stored at all. They
+     still rank, and they still come back with something loggable. */
+  var legacy = Store.rankRecent(
+    [{ id: 'l1', foodId: 'bagel', date: '2026-09-09', qty: 2, kcal: 290 }],
+    RFOODS, { on: '2026-09-09' });
+  check('an entry with no unit falls back to servings',
+    legacy[0].unit === 'serving' && legacy[0].amount === 2, legacy[0].unit + legacy[0].amount);
+
+  check('a malformed date is skipped, not thrown on',
+    Store.rankRecent([ent('coffee', 'not-a-date', 1, 'oz', 1)], RFOODS, { on: '2026-09-09' }).length === 0);
+  check('a malformed "on" returns nothing rather than everything',
+    Store.rankRecent([ent('coffee', '2026-09-09', 1, 'oz', 1)], RFOODS, { on: 'today' }).length === 0);
+  check('null entries are safe', Store.rankRecent(null, RFOODS, { on: '2026-09-09' }).length === 0);
+  check('null foods are safe', Store.rankRecent([ent('coffee', '2026-09-09', 1, 'oz', 1)], null,
+    { on: '2026-09-09' }).length === 0);
+  check('no options is safe', Store.rankRecent([], RFOODS).length === 0);
+
+  check('day numbers are days apart, not milliseconds',
+    Store.dayNumber('2026-09-09') - Store.dayNumber('2026-09-02') === 7,
+    Store.dayNumber('2026-09-09') - Store.dayNumber('2026-09-02'));
+  check('a day number survives a daylight-saving boundary',
+    Store.dayNumber('2026-11-02') - Store.dayNumber('2026-11-01') === 1);
+  check('a bad key has no day number', Store.dayNumber('2026-9-9') === null);
+
   var summary = { passes: passes, failures: failures.length, detail: failures };
   root.__results = summary;
   if (typeof document !== 'undefined') {

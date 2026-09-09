@@ -123,29 +123,56 @@ something useful. Note everything that looks broken but is merely empty.
 
 ---
 
+## What changed since this brief was written
+
+A first pass has been made against an outside read of the scenarios below.
+Run them against the current app, not the one described in the paragraphs
+above — several of the costs this brief was written to measure have already
+moved.
+
+**Today is reordered.** Budget, then a Quick add strip of the four foods
+most likely to be logged right now, then Food, then macros, weight, water,
+micronutrients, habits, note. Weight folds to one line once it is in.
+Water shows two quick amounts with the rest behind *More*.
+
+**Quick add is the primary route.** One tap logs a food at the amount it
+is usually logged in, with an *Added · Undo* line. The pencil beside it
+opens the amount editor.
+
+**The `+` is now a labelled button** reading *Add food another way*. The
+five-route sheet behind it is unchanged.
+
+**A search that comes back thin says where else to look**, in place:
+scan the package, paste a nutrition link, type the numbers. Both in the
+composer and after a USDA miss.
+
+**The composer no longer carries amount and unit.** There is one amount
+editor, opened deliberately, reachable from a quick-add pencil, a typed
+suggestion, a logged line, or a lookup result. Logged rows now say
+*Edit*.
+
+**As-you-type suggestions were being rendered into a hidden container**
+and had not been visible since the add sheet was built. Fixed.
+
+**The still-photo barcode route is now the primary button**, with the
+live camera second.
+
+**A catch-up strip** opens from the date: the last week, with a dot on
+the days that have anything in them, one tap to any of them.
+
 ## Known rough edges
 
 Reported from daily use — no need to rediscover these.
 
-**The add sheet is two days old and unreviewed.**
-Six ways to add food used to sit on one card, all visible at once. They moved
-behind a `+` last week. Nobody has assessed whether that helped — it is the
-newest thing here and the most likely to be wrong.
-
 **USDA search is about half useful.**
 The free food database is generic and weak on brands. When it misses, the
-fallbacks are a barcode or a pasted link — but the person has to know that, and
-right now nothing tells them.
+routes that answer are a barcode or a pasted link. Those are now offered at
+the moment of the miss; whether the wording gets anybody to take them is
+exactly the sort of thing this review should say.
 
 **Barcode autocapture is unreliable.**
 The live camera preview often fails to catch a code. A still photo decodes far
-more often, and now sits beside the camera button rather than behind the failure
-— the wrong option is still the more prominent one.
-
-**Serving size is a recurring confusion.**
-Typing macros by hand records them "per serving" without ever asking what a
-serving is. The app now asks the first time a conversion needs it, but the
-question arrives long after the numbers were entered.
+more often and is now the primary button, with the camera second.
 
 **Steps arrive from outside the app.**
 A separate iPhone app pushes step counts in. It cannot run overnight — iOS
@@ -188,16 +215,19 @@ Light and dark, following the phone. Any colour proposal needs to hold in both.
 
 Beyond anything else you find:
 
-- Is a `+` that opens a five-tab sheet the right model for "six ways to add
-  food", or should one or two routes stay on the main card?
-- The amount-and-unit control appears twice, in two different contexts. Should
-  it?
 - Does coverage — "38% of your iron, from 30% of today's calories" — read as
-  useful precision, or as noise that undermines the number beside it?
-- Today is a long scroll: budget, macros, weight, water, steps, food,
-  micronutrients, habits, note. What earns its place above the fold?
-- When a food can only be logged in servings because nothing knows its weight, is
-  asking mid-task the right moment — or should that question live elsewhere?
+  useful precision, or as noise that undermines the number beside it? This one
+  is untouched and still open.
+- Four quick-add foods, ranked by frequency discounted by a fortnight's
+  half-life. Is four the right number, is the half-life right, and does the
+  ranking put the right thing first on a Tuesday morning?
+- Logging is now a commit with an Undo rather than a confirm. Is six seconds
+  long enough to notice a wrong tap while walking?
+- The amount editor is one sheet doing four jobs — a new lookup result, a
+  library food at an unusual amount, a logged line being corrected, and the
+  serving-weight question. Does it still read as one thing?
+- Quick add takes the space directly under the calorie number. Is that the
+  right trade against the Food composer sitting at the fold?
 
 ---
 
@@ -214,4 +244,4 @@ Please don't spend time on:
 
 ---
 
-*Trendline · local-first PWA · 766 tests across 9 suites*
+*Trendline · local-first PWA · 785 tests across 10 suites*

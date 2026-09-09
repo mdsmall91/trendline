@@ -22,7 +22,7 @@
   var authEmail = '';
   var authMessage = '';
   var syncing = false;
-  var lookup = { results: [], status: '', open: false, source: null };
+  var lookup = { results: [], status: '', open: false, exhausted: false };
   var macroKey = 'protein';     /* which macro the Trend chart is showing */
   var trendView = 'food';       /* Trend sub-tab: food | training */
   var libKind = 'food';         /* Foods panel: food | recipe */
@@ -141,9 +141,19 @@
      TODAY
      --------------------------------------------------------------- */
 
+  var recentAll = [], recentIndex = {}, quickRows = [], pickRows = [];
+  var weightOpen = false;
+
   function renderToday(D) {
     $('dayLabel').textContent = longDate(day);
     $('nextDay').disabled = day >= WL.todayKey();
+
+    /* Ranked once per render and read from twice: the strip takes the
+       top of it, and everything that needs to know how much of a food
+       you usually eat reads the rest. */
+    recentAll = Store.recentFoods(day);
+    recentIndex = {};
+    recentAll.forEach(function (r) { recentIndex[r.foodId] = r; });
 
     var d = Store.peekDay(day);
     var lines = Store.entriesFor(day);
@@ -190,6 +200,17 @@
       ? 'Weigh in first thing, after the bathroom, before food. Same conditions every day is what makes the trend mean anything.'
       : 'Trend on this day: ' + fmt(tr, 1) + ' lb';
 
+    /* A weigh-in happens once and is then done. Leaving its form open
+       underneath the answer costs half a card of the space the things
+       done eight times a day are competing for. */
+    var weighed = !!(d && typeof d.weight === 'number');
+    $('weightDoneVal').hidden = !weighed;
+    $('weightChange').hidden = !weighed;
+    $('weightDoneVal').textContent = weighed ? fmt(d.weight, 1) + ' lb' : '';
+    $('weightForm').hidden = weighed && !weightOpen;
+
+    renderQuickAdd();
+
     var log = $('foodLog');
     if (!lines.length) {
       log.innerHTML = '<li><span class="empty" style="flex:1">Nothing logged yet.</span></li>';
@@ -207,11 +228,14 @@
         if (t.protein || t.carbs || t.fat) {
           sub.push(fmt(t.protein) + 'p ' + fmt(t.carbs) + 'c ' + fmt(t.fat) + 'f');
         }
-        /* The row is the edit affordance. A separate pencil per line is
-           a lot of furniture on a phone for something you do often. */
+        /* The whole row is the edit affordance, and now it says so.
+           Correcting yesterday's dinner is a normal part of tracking
+           honestly rather than an exception workflow, and an
+           affordance nobody can see is not an affordance. */
         return '<li><button class="rowedit" data-edit="' + esc(line.id) + '">' +
           '<span class="name"><b>' + esc(line.name || 'Quick add') + '</b>' +
           (sub.length ? '<small>' + esc(sub.join('  ·  ')) + '</small>' : '') + '</span>' +
+          '<span class="edit">Edit</span>' +
           '<span class="kcal">' + fmt(t.kcal) + '</span></button>' +
           '<button class="btn ghost" data-rm="' + esc(line.id) + '" aria-label="Remove">&times;</button></li>';
       }).join('');
@@ -264,6 +288,296 @@
         fmt(D.training.gross) + ' you worked off.';
     }
     return s;
+  }
+
+  /* ---------------------------------------------------------------
+     ADDED · UNDO
+
+     Confirmation without a dialog. Logging is the thing this app is
+     for and it happens while walking, so it must not stop to ask.
+     What it does instead is say what landed and offer a few seconds
+     to take it back.
+
+     Undo over confirm, deliberately. A confirm step on the action
+     performed eight times a day is a toll paid eight times, to
+     prevent a mistake that costs one tap to reverse.
+     --------------------------------------------------------------- */
+
+  var toastTimer = null, toastAction = null;
+
+  function showToast(text, undo) {
+    toastAction = undo || null;
+    $('toastText').textContent = text;
+    $('toastUndo').hidden = !undo;
+    $('toast').hidden = false;
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(hideToast, undo ? 6000 : 3000);
+  }
+
+  function hideToast() {
+    if (toastTimer) { clearTimeout(toastTimer); toastTimer = null; }
+    $('toast').hidden = true;
+    toastAction = null;
+  }
+
+  $('toastUndo').addEventListener('click', function () {
+    var fn = toastAction;
+    hideToast();
+    if (fn) fn();
+  });
+
+  /* ---------------------------------------------------------------
+     ONE WAY INTO THE LOG
+
+     The strip, the suggestions and the composer all end up here, so a
+     logged line is built in one place and "Added · Undo" means the
+     same thing wherever it appears.
+     --------------------------------------------------------------- */
+
+  function amountLabel(amount, unit, qty) {
+    if (unit && unit !== 'serving') return Units.describe(amount, unit);
+    var n = (typeof amount === 'number' && amount > 0) ? amount
+      : ((typeof qty === 'number' && qty > 0) ? qty : 1);
+    return n === 1 ? '1 serving' : fmt(n, 2) + ' servings';
+  }
+
+  function logFood(f, amount, unit, qty) {
+    if (typeof qty !== 'number' || !(qty > 0)) qty = Units.toServings(amount, unit, f);
+    /* A unit the food cannot answer for should be unreachable here —
+       every caller takes its unit from something already logged. If
+       one ever is not, one serving is the honest fallback rather than
+       a number quietly computed from nothing. */
+    if (qty === null || !(qty > 0)) { amount = 1; unit = 'serving'; qty = 1; }
+
+    var e = Store.addEntry(day, {
+      foodId: f.id, name: f.name, qty: qty, amount: amount, unit: unit,
+      kcal: f.kcal, protein: f.protein, carbs: f.carbs, fat: f.fat
+    });
+    render();
+    showToast('Added ' + f.name + '  ·  ' + amountLabel(amount, unit, qty), function () {
+      Store.removeEntry(e.id);
+      render();
+    });
+    return e;
+  }
+
+  /* How much of this food you usually eat, from the ranking built at
+     the top of the render. One serving when there is no history worth
+     the name — which is also what a brand new food gets. */
+  function usualFor(foodId) {
+    var r = recentIndex && recentIndex[foodId];
+    return r ? { amount: r.amount, unit: r.unit, qty: r.qty }
+      : { amount: 1, unit: 'serving', qty: 1 };
+  }
+
+  /* ---------------------------------------------------------------
+     QUICK ADD
+
+     Up to six foods, each showing the amount it is usually eaten in
+     and what that comes to. The wide half of each logs it; the narrow
+     half opens the amount editor, for the day it was not the usual
+     amount.
+     --------------------------------------------------------------- */
+
+  function renderQuickAdd() {
+    /* Four. Six fitted only in two columns, and two columns truncated
+       every name long enough to need reading. */
+    quickRows = recentAll.slice(0, 4);
+    $('quickAddCard').hidden = !quickRows.length;
+    if (!quickRows.length) return;
+
+    $('quickAdd').innerHTML = quickRows.map(function (r, i) {
+      var kcal = (r.food.kcal === null || r.food.kcal === undefined)
+        ? null : r.food.kcal * r.qty;
+      var sub = amountLabel(r.amount, r.unit, r.qty) +
+        (kcal === null ? '' : '  ·  ' + fmt(kcal) + ' cal');
+      return '<div class="qa">' +
+        '<button class="qa-log" data-quick="' + i + '">' +
+          '<b>' + esc(r.name) + '</b><small>' + esc(sub) + '</small></button>' +
+        '<button class="qa-edit" data-quick-edit="' + i + '" aria-label="Change the amount of ' +
+          esc(r.name) + '">&#9998;</button>' +
+        '</div>';
+    }).join('');
+  }
+
+  $('quickAdd').addEventListener('click', function (ev) {
+    var log = ev.target.closest('[data-quick]');
+    if (log) {
+      var r = quickRows[Number(log.dataset.quick)];
+      if (r) logFood(r.food, r.amount, r.unit, r.qty);
+      return;
+    }
+    var ed = ev.target.closest('[data-quick-edit]');
+    if (ed) {
+      var q = quickRows[Number(ed.dataset.quickEdit)];
+      if (q) openAmountForFood(q.food, q.amount, q.unit);
+      return;
+    }
+  });
+
+  /* Past the fourth food, the composer below is the list of the rest:
+     it matches anywhere in a name, not just the start, and it is two
+     letters away. A second scrolling list of the same foods would be
+     the same information twice. */
+  $('quickMore').addEventListener('click', function () {
+    scrollToEl('foodPick');
+    $('foodPick').focus();
+  });
+
+  function scrollToEl(id) {
+    try { $(id).scrollIntoView({ block: 'center', behavior: 'smooth' }); }
+    catch (e) { $(id).scrollIntoView(); }
+  }
+
+  /* ---------------------------------------------------------------
+     AS YOU TYPE
+
+     Matches from your own library, drawn on the page. There has always
+     been a <datalist> behind the box and on a phone it may as well not
+     exist: iOS renders it as a cramped dropdown that matches only from
+     the START of a name, so a recipe called "Slow cooker chicken tikka
+     masala" is invisible to anyone typing "tikka" — which is what a
+     person types.
+
+     Worse, since the add sheet was built these matches have been
+     rendering into a list that lives inside it, and the sheet is
+     hidden. The suggestions were being drawn into a closed drawer.
+
+     When nothing matches, the panel does not simply go quiet. USDA is
+     generic and half useless on brands, and the routes that answer
+     when it misses are named right here rather than left behind a
+     plus for somebody to remember.
+     --------------------------------------------------------------- */
+
+  function renderPick() {
+    var q = $('foodPick').value.trim();
+    if (q.length < 2) { $('pickList').hidden = true; pickRows = []; return; }
+
+    pickRows = Store.searchLibrary(q, 6);
+    $('pickList').hidden = false;
+    $('pickNext').hidden = !!pickRows.length;
+    $('pickResults').hidden = !pickRows.length;
+
+    if (!pickRows.length) {
+      $('pickStatus').textContent = 'Nothing of yours matches “' + q + '”. Where to look:';
+      $('pickResults').innerHTML = '';
+      return;
+    }
+
+    $('pickStatus').textContent =
+      'Yours — tap to log at the amount shown, or the pencil to change it.';
+    $('pickResults').innerHTML = pickRows.map(function (f, i) {
+      var u = usualFor(f.id);
+      var kcal = (f.kcal === null || f.kcal === undefined) ? null : f.kcal * u.qty;
+      var sub = amountLabel(u.amount, u.unit, u.qty) +
+        ((f.kind || 'food') === 'recipe' ? '  ·  recipe' : '');
+      return '<li><button class="rowedit" data-pickrow="' + i + '">' +
+        '<span class="name"><b>' + esc(f.name) + '</b><small>' + esc(sub) + '</small></span>' +
+        '<span class="kcal">' + (kcal === null ? '—' : fmt(kcal)) + '</span></button>' +
+        '<button class="btn ghost" data-pickedit="' + i + '" aria-label="Change the amount of ' +
+        esc(f.name) + '">&#9998;</button></li>';
+    }).join('');
+  }
+
+  function clearComposer() {
+    $('foodPick').value = '';
+    renderPick();
+    /* The composer stays open and focused. Two foods in a row is the
+       normal case rather than the exception, and sending the cursor
+       away after each one makes the second cost as much as the first. */
+    $('foodPick').focus();
+  }
+
+  $('pickResults').addEventListener('click', function (ev) {
+    var b = ev.target.closest('[data-pickrow]');
+    if (b) {
+      var f = pickRows[Number(b.dataset.pickrow)];
+      if (f) { var u = usualFor(f.id); logFood(f, u.amount, u.unit, u.qty); clearComposer(); }
+      return;
+    }
+    var ed = ev.target.closest('[data-pickedit]');
+    if (ed) {
+      var g = pickRows[Number(ed.dataset.pickedit)];
+      if (g) { var v = usualFor(g.id); openAmountForFood(g, v.amount, v.unit); }
+    }
+  });
+
+  $('pickNext').addEventListener('click', function (ev) {
+    var b = ev.target.closest('[data-route]');
+    if (!b) return;
+    routeTo(b.dataset.route, $('foodPick').value.trim());
+  });
+
+  /* The exception routes, from wherever the dead end was hit. */
+  function routeTo(route, name) {
+    openAddSheet(route === 'manual' ? 'manual' : route);
+    if (route === 'manual') openManualFor(name);
+    if (route === 'search' && name) { $('addSearchText').value = name; $('searchOnline').click(); }
+  }
+
+  /* ---------------------------------------------------------------
+     CATCH UP
+
+     A weekend that went unlogged used to cost a back arrow per day
+     and a label to re-read between each. The strip is the last week
+     with a dot on the days that have something in them, one tap to
+     any of them, opened and closed from the date itself so it costs
+     nothing on a day nobody is catching up.
+     --------------------------------------------------------------- */
+
+  var DAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+  function renderDateStrip() {
+    var open = !$('dateStrip').hidden;
+    $('dayLabel').setAttribute('aria-expanded', String(open));
+    if (!open) return;
+
+    var today = WL.todayKey(), days = [], i;
+    for (i = 6; i >= 0; i--) days.push(WL.addDays(today, -i));
+    /* The day being read is always on the strip. Walking back a
+       fortnight with the arrows and then opening this to seven days
+       none of which is the one you are on would be a fine way to lose
+       your place. */
+    if (days.indexOf(day) < 0) days.unshift(day);
+
+    var logged = {};
+    Store.loggedDates().forEach(function (k) { logged[k] = 1; });
+
+    $('dateStripIn').innerHTML = days.map(function (k) {
+      var dt = new Date(k + 'T12:00:00');
+      return '<button class="dchip" data-day="' + k + '" aria-pressed="' +
+        (k === day ? 'true' : 'false') + '">' +
+        '<span>' + (k === today ? 'Today' : DAY_SHORT[dt.getDay()]) + '</span>' +
+        '<b>' + dt.getDate() + '</b>' +
+        '<i class="' + (logged[k] ? '' : 'none') + '"></i></button>';
+    }).join('');
+
+    /* Seven chips do not always fit, and the one that must be visible
+       is the one the header claims you are looking at. */
+    var here = $('dateStripIn').querySelector('[aria-pressed="true"]');
+    if (here) {
+      try { here.scrollIntoView({ block: 'nearest', inline: 'center' }); }
+      catch (e) { $('dateStripIn').scrollLeft = here.offsetLeft; }
+    }
+  }
+
+  $('dayLabel').addEventListener('click', function () {
+    $('dateStrip').hidden = !$('dateStrip').hidden;
+    renderDateStrip();
+  });
+
+  $('dateStripIn').addEventListener('click', function (ev) {
+    var b = ev.target.closest('[data-day]');
+    if (b) goToDay(b.dataset.day);
+  });
+
+  /* One way to change the day, because three things now depend on
+     which one it is. */
+  function goToDay(key) {
+    day = key;
+    weightOpen = false;
+    hideToast();
+    render();
   }
 
   /* ---------------------------------------------------------------
@@ -1178,6 +1492,7 @@
     if (!lookup.open) return;
 
     $('lookupStatus').textContent = lookup.status || '';
+    $('lookupNext').hidden = !lookup.exhausted;
     $('lookupResults').innerHTML = lookup.results.map(function (r, i) {
       var sub = [];
       if (r.serving) sub.push(r.serving);
@@ -1194,19 +1509,20 @@
     }).join('');
   }
 
-  function setLookup(status, results, source) {
+  function setLookup(status, results, exhausted) {
     lookup.open = true;
     lookup.status = status || '';
     lookup.results = results || [];
-    /* Who opened this list: 'typing' for as-you-type suggestions,
-       undefined for a search or a scan the person asked for. Only the
-       first kind gets closed automatically. */
-    lookup.source = source || null;
+    /* Set when the search has finished and come back thin. Not while
+       it is still running: offering a barcode scan under the word
+       "Searching..." reads as a failure that has not happened yet. */
+    lookup.exhausted = !!exhausted;
     renderLookup();
   }
 
   function closeLookup() {
-    lookup.open = false; lookup.results = []; lookup.status = ''; lookup.source = null;
+    lookup.open = false; lookup.results = []; lookup.status = '';
+    lookup.exhausted = false;
     renderLookup();
   }
 
@@ -1248,6 +1564,18 @@
 
   var feUnitChoice = 'serving';
 
+  /* How much food the editor is currently describing, in servings.
+
+     The box on screen holds that same amount expressed in whatever
+     unit is selected, so changing the unit re-expresses it rather than
+     reinterpreting the digits. Without this, opening at "1 serving"
+     and switching to grams left the box reading 1 — one gram of
+     cottage cheese, four fifths of a calorie — and the number
+     underneath duly said so. Answering the serving-weight question and
+     watching 180 calories become 1 is not a rounding surprise; it
+     reads as the app having lost the plot. */
+  var feServings = 1;
+
   function feBase() { return editing ? editing.base : null; }
 
   function round0(v) { return (v === null || v === undefined) ? null : Math.round(v); }
@@ -1264,23 +1592,61 @@
 
     var needs = (b && Units.servingsPerUnit(b, feUnitChoice) === null) ? feUnitChoice : null;
     $('feLearn').hidden = !needs;
+    $('feLearnNote').textContent = '';
     if (needs) {
       var asMass = (needs === 'g' || needs === 'oz');
+      /* The question names the macros it applies to, because on its
+         own it is ambiguous in a way that goes wrong quietly. "One
+         serving weighs how much" invites the weight of the tub, or of
+         the portion on the label, or of what was just eaten — and
+         whichever you answer, the app silently declares the stored
+         calories to be for THAT weight. Showing the numbers makes it
+         answerable: this many calories, for how many grams? */
+      var macro = (b.kcal === null || b.kcal === undefined) ? ''
+        : (fmt(b.kcal) + ' cal' +
+          (b.protein !== null && b.protein !== undefined
+            ? ', ' + fmt(b.protein) + 'p ' + fmt(b.carbs) + 'c ' + fmt(b.fat) + 'f' : ''));
       $('feLearnLabel').textContent = asMass
-        ? 'One serving weighs, in grams' : 'One serving is, in cups';
+        ? (macro ? macro + ' — how many grams is that?' : 'One serving weighs, in grams')
+        : (macro ? macro + ' — how many cups is that?' : 'One serving is, in cups');
       $('feLearnValue').value = '';
       $('feLearnValue').placeholder = asMass ? '226' : '0.5';
+      $('feLearnNote').textContent = asMass
+        ? 'The weight those calories are for — usually the serving size on the tub. ' +
+          'Answer once and grams and ounces both work from then on. Leave it and this food ' +
+          'stays loggable in servings.'
+        : 'The amount those calories are for, as a fraction of a cup. Leave it and this food ' +
+          'stays loggable in servings.';
     }
   }
 
   /* Scale the source figures to the amount showing. They stay editable
      afterwards: the numbers are a starting point, and a label that
      disagrees with a database is the label's problem, not yours. */
+  /* Two decimals for anything measured, none for grams: nobody weighs
+     to a hundredth of a gram, and "226.00" reads like false precision
+     the scale did not offer. */
+  function feRound(v, unit) {
+    return unit === 'g' ? Math.round(v) : Math.round(v * 100) / 100;
+  }
+
+  /* Show feServings in the unit now selected. Silently does nothing
+     when the food cannot yet answer for that unit — the learn row is
+     on screen at that moment asking the question that would let it. */
+  function feShowAmount() {
+    var b = feBase();
+    if (!b) return;
+    var v = Units.fromServings(feServings, feUnitChoice, b);
+    if (v === null || !(v > 0)) return;
+    $('feAmount').value = String(feRound(v, feUnitChoice));
+  }
+
   function feRecompute() {
     var b = feBase();
     if (!b) return;
     var servings = Units.toServings($('feAmount').value, feUnitChoice, b);
     if (servings === null) return;
+    feServings = servings;
     function s(v) { return (v === null || v === undefined) ? null : v * servings; }
     feSet('feKcal', round0(s(b.kcal)));
     feSet('feP', round1(s(b.protein)));
@@ -1302,8 +1668,12 @@
     b.serving = label ? label + ' (' + addition + ')' : addition;
     if (asMass) b.servingGrams = v;
     feRenderUnits();
+    /* The question has been answered, so the amount can finally be
+       written in the unit that prompted it. */
+    feShowAmount();
     feRecompute();
     $('feAmount').focus();
+    $('feAmount').select();
   }
 
   function openFoodEditForResult(rec) {
@@ -1317,20 +1687,41 @@
 
     $('feTitle').textContent = rec.name;
     $('feAmount').value = feUnitChoice === 'g'
-      ? String(Math.round(Units.basisFor(b).mass))
-      : String(Units.parseAmount($('foodAmount').value) || 1);
+      ? String(Math.round(Units.basisFor(b).mass)) : '1';
+    feServings = 1;
 
     feRenderUnits();
     feRecompute();
 
     $('feSave').textContent = 'Log it';
     $('feHint').textContent = 'Stated as ' + (rec.serving || '1 serving') +
-      '. Change the amount or the unit and the numbers follow \u2014 or type over any of them.' +
+      '. Change the amount or the unit and the numbers follow — or type over any of them.' +
       (rec.micros ? ' Micronutrients came with it.' : '');
-    $('foodEdit').hidden = false;
-    revealFoodEdit();
-    $('feAmount').focus();
-    $('feAmount').select();
+    openAmountSheet();
+  }
+
+  /* A food already in the library, at an amount other than the usual
+     one. Nothing about the food itself is rewritten: the numbers on
+     screen scale the record, and what gets stored is the line. */
+  function openAmountForFood(f, amount, unit) {
+    editing = {
+      mode: 'food', food: f,
+      base: {
+        name: f.name, serving: f.serving, servingGrams: null,
+        kcal: f.kcal, protein: f.protein, carbs: f.carbs, fat: f.fat,
+        micros: f.micros || null
+      }
+    };
+    feUnitChoice = unit || 'serving';
+    $('feTitle').textContent = f.name;
+    $('feAmount').value = String((typeof amount === 'number' && amount > 0) ? amount : 1);
+    feServings = Units.toServings($('feAmount').value, feUnitChoice, editing.base) || 1;
+    feRenderUnits();
+    feRecompute();
+    $('feSave').textContent = 'Log it';
+    $('feHint').textContent = (f.serving ? 'One serving is ' + f.serving + '. ' : '') +
+      'Change the amount or the unit and the numbers follow.';
+    openAmountSheet();
   }
 
   function openFoodEditForEntry(id) {
@@ -1353,6 +1744,7 @@
     $('feAmount').value = String(
       (typeof e.amount === 'number' && e.amount > 0) ? e.amount
         : (typeof e.qty === 'number' ? e.qty : 1));
+    feServings = (typeof e.qty === 'number' && e.qty > 0) ? e.qty : 1;
 
     feRenderUnits();
     feRecompute();
@@ -1360,23 +1752,27 @@
     $('feSave').textContent = 'Save';
     $('feHint').textContent = 'Change the amount or the unit and the numbers follow. ' +
       'Type over any of them to correct what was logged.';
-    $('foodEdit').hidden = false;
     lookup.open = false; renderLookup();
-    revealFoodEdit();
+    openAmountSheet();
+  }
+
+  /* A sheet rather than a panel in the page.
+
+     It used to sit inside the add sheet, which meant correcting a line
+     in today's log went through a sheet about adding new food — and
+     landed off-screen behind the keyboard often enough to need a
+     scroll-into-view to paper over it. A sheet opens over whatever
+     asked for it, in the same place every time, and closes back to
+     it. */
+  function openAmountSheet() {
+    $('amountSheet').hidden = false;
     $('feAmount').focus();
     $('feAmount').select();
   }
 
-  /* Opened from a row further up the log, the panel can land off-screen
-     behind the keyboard — you tap a line and nothing appears to happen. */
-  function revealFoodEdit() {
-    try { $('foodEdit').scrollIntoView({ block: 'center', behavior: 'smooth' }); }
-    catch (e) { $('foodEdit').scrollIntoView(); }
-  }
-
   function closeFoodEdit() {
     editing = null;
-    $('foodEdit').hidden = true;
+    $('amountSheet').hidden = true;
   }
 
   function saveFoodEdit() {
@@ -1408,6 +1804,35 @@
       carbs: per(shown.carbs), fat: per(shown.fat)
     };
 
+    /* A serving weight answered in here belongs to the food, not to
+       this one line. Being asked "how many grams is that?" twice for
+       the same tub of cottage cheese is how people stop answering. */
+    var learnOn = editing.mode === 'food' ? editing.food
+      : (editing.mode === 'entry' ? entryFood(editing.id) : null);
+    if (learnOn && b.serving && b.serving !== learnOn.serving) {
+      Store.addFood({
+        id: learnOn.id, name: learnOn.name, serving: b.serving,
+        kcal: learnOn.kcal, protein: learnOn.protein,
+        carbs: learnOn.carbs, fat: learnOn.fat
+      });
+    }
+
+    if (editing.mode === 'food') {
+      var lf = editing.food;
+      Store.addEntry(day, {
+        foodId: lf.id, name: lf.name, qty: servings,
+        amount: amount, unit: feUnitChoice,
+        kcal: vals.kcal, protein: vals.protein, carbs: vals.carbs, fat: vals.fat
+      });
+      closeFoodEdit();
+      closeLookup();
+      closeAddSheet();
+      $('foodPick').value = '';
+      render();
+      showToast('Added ' + lf.name + '  ·  ' + amountLabel(amount, feUnitChoice, servings));
+      return;
+    }
+
     if (editing.mode === 'entry') {
       Store.updateEntry(editing.id, {
         qty: servings, amount: amount, unit: feUnitChoice,
@@ -1415,6 +1840,11 @@
       });
       closeFoodEdit();
       render();
+      /* The day total has already moved by the time this is read.
+         Saying so is what makes a correction feel as cheap as an
+         entry, which is the point: corrections are normal. */
+      showToast('Updated · ' +
+        fmt(WL.entryTotals({ food: Store.entriesFor(day) }).kcal) + ' cal logged today');
       return;
     }
 
@@ -1442,13 +1872,17 @@
     });
 
     $('foodPick').value = '';
-    $('foodAmount').value = '1';
-    unitChoice = 'serving';
-    refreshUnits();
     closeFoodEdit();
     closeLookup();
     closeAddSheet();
     render();
+    showToast('Added ' + f.name + '  ·  ' + amountLabel(amount, feUnitChoice, servings));
+  }
+
+  /* The library record behind a logged line, when there is one. */
+  function entryFood(id) {
+    var e = Store.entry(id);
+    return (e && e.foodId) ? Store.food(e.foodId) : null;
   }
   /* ---------------------------------------------------------------
      ACCOUNT / SYNC
@@ -1659,6 +2093,8 @@
   function render() {
     var D = derive();
     renderToday(D);
+    renderPick();
+    renderDateStrip();
     renderWater();
     renderMicros();
     renderTrend(D);
@@ -1788,11 +2224,10 @@
     b.addEventListener('click', function () { goTab(b.dataset.tab); });
   });
 
-  $('prevDay').addEventListener('click', function () { day = WL.addDays(day, -1); render(); });
+  $('prevDay').addEventListener('click', function () { goToDay(WL.addDays(day, -1)); });
   $('nextDay').addEventListener('click', function () {
-    if (day < WL.todayKey()) { day = WL.addDays(day, 1); render(); }
+    if (day < WL.todayKey()) goToDay(WL.addDays(day, 1));
   });
-  $('dayLabel').addEventListener('click', function () { day = WL.todayKey(); render(); });
 
   $('syncPill').addEventListener('click', function () {
     if (!Sync.configured() || !Sync.signedIn()) { goTab('settings'); return; }
@@ -1803,8 +2238,16 @@
   function saveWeight() {
     var v = num($('weightInput'));
     Store.setWeight(day, v);
+    weightOpen = false;
     render();
   }
+
+  $('weightChange').addEventListener('click', function () {
+    weightOpen = true;
+    render();
+    $('weightInput').focus();
+    $('weightInput').select();
+  });
   $('saveWeight').addEventListener('click', saveWeight);
   $('weightInput').addEventListener('change', saveWeight);
   $('weightInput').addEventListener('keydown', function (ev) {
@@ -1824,170 +2267,42 @@
      density this app was never told. See js/units.js.
      --------------------------------------------------------------- */
 
-  var unitChoice = 'serving';
   var pendingMicros = null;    /* a panel read from a recipe page, awaiting Save */
 
-  function currentFood() {
-    return Store.findFoodByName($('foodPick').value.trim());
-  }
-
-  /* Every unit is offered, always. An earlier version listed only the
-     ones a food could already justify, which was honest and useless:
-     most foods are typed in by hand with no serving description at all,
-     so the list collapsed to "servings" and stayed there, with nothing
-     on screen suggesting a way out.
+  /* Every unit is offered in the amount editor, always. An earlier
+     version listed only the ones a food could already justify, which
+     was honest and useless: most foods are typed in by hand with no
+     serving description at all, so the list collapsed to "servings"
+     and stayed there, with nothing on screen suggesting a way out.
 
      Refusing to guess is still the rule. But there is a third option
      between guessing and refusing, and it is the obvious one: ask.
      Choose grams for a food that has never been weighed and it asks
-     what one serving weighs, once, and knows from then on. */
+     what one serving weighs, once, and knows from then on — and it
+     asks in the editor, where grams were deliberately chosen, rather
+     than halfway through logging a breakfast. */
   var ALL_UNITS = ['serving', 'g', 'oz', 'cup', 'tbsp', 'tsp'];
 
-  function refreshUnits() {
-    var f = currentFood();
-    if (ALL_UNITS.indexOf(unitChoice) < 0) unitChoice = 'serving';
-    $('foodUnit').innerHTML = ALL_UNITS.map(function (u) {
-      /* An ellipsis marks a unit that will ask a question first, so the
-         question is not a surprise. */
-      var known = !f || Units.servingsPerUnit(f, u) !== null;
-      return '<option value="' + u + '"' + (u === unitChoice ? ' selected' : '') + '>' +
-        esc(Units.label(u)) + (known ? '' : ' \u2026') + '</option>';
-    }).join('');
-
-    var needs = (f && Units.servingsPerUnit(f, unitChoice) === null) ? unitChoice : null;
-    $('unitLearn').hidden = !needs;
-    $('unitNote').textContent = '';
-
-    if (needs) {
-      var asMass = (needs === 'g' || needs === 'oz');
-      /* The question names the macros it applies to, because on its own
-         it is ambiguous in a way that goes wrong quietly. "One serving
-         weighs how much" invites the weight of the tub, or of the
-         portion on the label, or of what you just ate — and whichever
-         you answer, the app silently declares the stored calories to be
-         for THAT weight. Showing the numbers makes the question
-         answerable: this many calories, for how many grams? */
-      var macro = (f.kcal === null || f.kcal === undefined)
-        ? '' : (fmt(f.kcal) + ' cal' +
-            (f.protein !== null && f.protein !== undefined
-              ? ', ' + fmt(f.protein) + 'p ' + fmt(f.carbs) + 'c ' + fmt(f.fat) + 'f' : ''));
-      $('unitLearnLabel').textContent = asMass
-        ? (macro ? macro + ' — how many grams is that?' : 'One serving weighs, in grams')
-        : (macro ? macro + ' — how many cups is that?' : 'One serving is, in cups');
-      $('unitLearnValue').placeholder = asMass ? '226' : '0.5';
-      $('unitLearnValue').value = '';
-      $('unitNote').textContent = asMass
-        ? 'The weight the calories above are for — usually the serving size on the tub. ' +
-          'Once it is in, grams and ounces both work.'
-        : 'The amount the calories above are for, as a fraction of a cup.';
-    } else if (f && !Units.basisFor(f).mass && !Units.basisFor(f).volumeMl) {
-      $('unitNote').textContent = f.name + ' has no weight or volume recorded yet. ' +
-        'Choose grams or cups above and it will ask for one.';
-    }
-  }
-
-  /* Fold the answer into the serving text rather than adding a field.
-     "1 cup (226 g)" is both a description a person can read and the
-     exact form js/units.js already parses, so one string carries the
-     label and the basis with no schema change and no migration. */
-  function learnUnitBasis() {
-    var f = currentFood();
-    if (!f) return;
-    var v = Units.parseAmount($('unitLearnValue').value);
-    if (v === null || v <= 0) { $('unitLearnValue').focus(); return; }
-
-    var asMass = (unitChoice === 'g' || unitChoice === 'oz');
-    var label = String(f.serving || '').trim();
-    var addition = asMass ? v + ' g' : v + ' cup';
-    Store.addFood({
-      id: f.id, name: f.name,
-      serving: label ? label + ' (' + addition + ')' : addition,
-      kcal: f.kcal, protein: f.protein, carbs: f.carbs, fat: f.fat
-    });
-    refreshUnits();
-    $('foodAmount').focus();
-  }
-
+  /* Add is for a name typed out in full. Anything already in the
+     library logs at the amount it is usually logged at; anything else
+     is not a logging problem but a new-food problem, and those live in
+     the sheet. */
   function addFoodLine() {
     var name = $('foodPick').value.trim();
     if (!name) { $('foodPick').focus(); return; }
 
     var f = Store.findFoodByName(name);
-    if (!f) {
-      $('inlineName').textContent = name;
-      $('inlineNew').hidden = false;
-      ['inServing', 'inKcal', 'inP', 'inC', 'inF'].forEach(function (id) { $(id).value = ''; });
-      $('inKcal').focus();
-      return;
-    }
+    if (!f) { routeTo('manual', name); return; }
 
-    var unit = $('foodUnit').value || 'serving';
-    var amount = Units.parseAmount($('foodAmount').value);
-    if (amount === null || amount <= 0) { $('foodAmount').focus(); return; }
-
-    var qty = Units.toServings(amount, unit, f);
-    if (qty === null) {
-      /* Should be unreachable, since the list only offers convertible
-         units. Unreachable is not the same as impossible. */
-      $('unitNote').textContent = 'That food cannot be measured in ' + Units.label(unit) + '.';
-      return;
-    }
-
-    Store.addEntry(day, {
-      foodId: f.id, name: f.name, qty: qty,
-      amount: amount, unit: unit,
-      kcal: f.kcal, protein: f.protein, carbs: f.carbs, fat: f.fat
-    });
-    $('foodPick').value = ''; $('foodAmount').value = '1';
-    unitChoice = 'serving';
-    refreshUnits();
-    $('inlineNew').hidden = true;
-    closeLookup();
-    render();
+    var u = usualFor(f.id);
+    logFood(f, u.amount, u.unit, u.qty);
+    clearComposer();
   }
   $('addFoodLine').addEventListener('click', addFoodLine);
-  $('foodUnit').addEventListener('change', function () {
-    unitChoice = $('foodUnit').value;
-    refreshUnits();
-  });
-  $('unitLearnSave').addEventListener('click', learnUnitBasis);
-  $('unitLearnValue').addEventListener('keydown', function (ev) {
-    if (ev.key === 'Enter') { ev.preventDefault(); learnUnitBasis(); }
-  });
   $('foodPick').addEventListener('keydown', function (ev) {
     if (ev.key === 'Enter') { ev.preventDefault(); addFoodLine(); }
   });
-
-  /* Suggestions as you type, from your own library.
-
-     There has always been a <datalist> behind this box, and on a phone
-     it may as well not exist: iOS renders it as a cramped dropdown and
-     matches only from the START of the name, so a recipe called
-     "Slow cooker chicken tikka masala" is invisible to anyone typing
-     "tikka" — which is what a person types. A recipe you saved and
-     cannot find is worse than one you never saved.
-
-     So the matches are drawn properly, in the same list the lookup
-     uses, ranked with recipes first. The datalist stays for desktop
-     browsers, where it works fine and costs nothing. */
-  $('foodPick').addEventListener('input', function () {
-    var q = $('foodPick').value.trim();
-    refreshUnits();
-    if (q.length < 2) {
-      /* Only close a list we opened ourselves. Closing one full of USDA
-         results because a letter was deleted would be maddening. */
-      if (lookup.source === 'typing') closeLookup();
-      return;
-    }
-    var mine = libraryResults(q);
-    if (!mine.length) {
-      if (lookup.source === 'typing') closeLookup();
-      return;
-    }
-    refreshUnits();
-    setLookup('From your library — tap one to log it. "Look it up" searches USDA.',
-      mine, 'typing');
-  });
+  $('foodPick').addEventListener('input', renderPick);
 
   /* Two ways out of the new-food panel, because there are two things
      people mean by "I ate this".
@@ -2008,8 +2323,9 @@
       $('inKcal').focus();
       return;
     }
-    var amount = Units.parseAmount($('foodAmount').value);
-    if (amount === null || amount <= 0) amount = 1;
+    /* One serving, because that is what the numbers just typed in
+       describe. Any other amount is a job for the editor. */
+    var amount = 1;
 
     if (save) {
       var f = Store.addFood({
@@ -2035,11 +2351,11 @@
 
     ['inServing', 'inKcal', 'inP', 'inC', 'inF'].forEach(function (id) { $(id).value = ''; });
     $('inlineNew').hidden = true;
-    $('foodPick').value = ''; $('foodAmount').value = '1';
-    unitChoice = 'serving';
-    refreshUnits();
+    $('foodPick').value = '';
     closeLookup();
+    closeAddSheet();
     render();
+    showToast('Added ' + name);
   }
 
   $('inSave').addEventListener('click', function () { finishNew(true); });
@@ -2067,7 +2383,19 @@
 
   $('foodLog').addEventListener('click', function (ev) {
     var rm = ev.target.closest('[data-rm]');
-    if (rm) { Store.removeEntry(rm.dataset.rm); render(); return; }
+    if (rm) {
+      var gone = Store.entry(rm.dataset.rm);
+      Store.removeEntry(rm.dataset.rm);
+      render();
+      /* Put back as a new line rather than resurrected in place: the
+         soft delete has already gone to the sync queue, and racing it
+         back out again buys nothing a fresh line does not. */
+      if (gone) showToast('Removed ' + (gone.name || 'that line'), function () {
+        Store.addEntry(gone.date, gone);
+        render();
+      });
+      return;
+    }
     var ed = ev.target.closest('[data-edit]');
     if (ed) openFoodEditForEntry(ed.dataset.edit);
   });
@@ -2644,6 +2972,17 @@
     if (!b) return;
     setWater(Store.waterOn(day) + Number(b.dataset.water));
   });
+  /* Two sizes cover almost every pour. The odd ones, the slider, the
+     exact figure and taking one back are behind More: present, one tap
+     away, and no longer five buttons wide across a card that food is
+     competing with for the top of the screen. */
+  $('waterMore').addEventListener('click', function () {
+    var opening = $('waterExtra').hidden;
+    $('waterExtra').hidden = !opening;
+    $('waterMore').setAttribute('aria-expanded', String(opening));
+    $('waterMore').textContent = opening ? 'Less' : 'More';
+  });
+
   $('waterSlider').addEventListener('input', function () {
     /* Rendered live while dragging, saved on release: writing on every
        pixel of a drag would fill the sync queue with a hundred
@@ -2752,21 +3091,26 @@
       mine.forEach(function (r) { have[r.name.toLowerCase()] = 1; });
       var fresh = rows.filter(function (r) { return !have[String(r.name).toLowerCase()]; });
 
+      /* Thin counts as a miss. Two results, neither of which is the
+         thing in your hand, is the same dead end as none — so the
+         routes that answer where USDA cannot are offered at the same
+         moment either way. */
+      var thin = (mine.length + fresh.length) < 3;
       if (!mine.length && !fresh.length) {
-        setLookup('Nothing found for “' + q + '”. Add it by hand and it is yours from then on.', []);
+        setLookup('Nothing found for “' + q + '”. Where to look instead:', [], true);
       } else {
         setLookup(mine.length
           ? 'Yours first, then ' + fresh.length + ' from USDA.'
           : fresh.length + ' found. Tap one to log it — it joins your library too.',
-          mine.concat(fresh));
+          mine.concat(fresh), thin);
       }
     }).catch(function (e) {
       /* A failed search does not throw away the half that worked. */
       if (mine.length) {
         setLookup(mine.length + ' from your library. USDA did not answer: ' +
-          String(e.message || e), mine);
+          String(e.message || e), mine, true);
       } else {
-        setLookup(String(e.message || e), []);
+        setLookup(String(e.message || e), [], true);
       }
     });
   });
@@ -2778,11 +3122,21 @@
     if (rec) openFoodEditForResult(rec);
   });
 
+  $('lookupNext').addEventListener('click', function (ev) {
+    var b = ev.target.closest('[data-route]');
+    if (!b) return;
+    var name = ($('addSearchText').value || $('foodPick').value).trim();
+    showAddPane(b.dataset.route);
+    if (b.dataset.route === 'manual') openManualFor(name);
+    if (b.dataset.route === 'link') $('addLinkUrl').focus();
+  });
+
   /* amount editor */
   $('feAmount').addEventListener('input', feRecompute);
   $('feUnit').addEventListener('change', function () {
     feUnitChoice = $('feUnit').value;
     feRenderUnits();
+    feShowAmount();
     feRecompute();
   });
   $('feLearnSave').addEventListener('click', feLearnBasis);
@@ -2791,7 +3145,11 @@
   });
   $('feSave').addEventListener('click', saveFoodEdit);
   $('feCancel').addEventListener('click', closeFoodEdit);
-  $('foodEdit').addEventListener('keydown', function (ev) {
+  $('feClose').addEventListener('click', closeFoodEdit);
+  $('amountSheet').addEventListener('click', function (ev) {
+    if (ev.target === $('amountSheet')) closeFoodEdit();
+  });
+  $('amountSheet').addEventListener('keydown', function (ev) {
     if (ev.key === 'Enter') { ev.preventDefault(); saveFoodEdit(); }
   });
 
@@ -3142,10 +3500,9 @@
     /* Results from one route are meaningless under another. Switching
        clears them rather than leaving a plate of food under "Barcode". */
     closeLookup();
-    $('foodEdit').hidden = true;
+    closeFoodEdit();
     $('plateCard').hidden = true;
     $('inlineNew').hidden = true;
-    editing = null;
   }
 
   function openAddSheet(which) {
@@ -3178,7 +3535,12 @@
     if (first) $(first).focus();
   });
   document.addEventListener('keydown', function (ev) {
-    if (ev.key === 'Escape' && !$('addSheet').hidden) closeAddSheet();
+    if (ev.key !== 'Escape') return;
+    /* Topmost first. The amount editor opens over the add sheet, and
+       one Escape closing both would take the sheet out from under an
+       edit that was only being reconsidered. */
+    if (!$('amountSheet').hidden) closeFoodEdit();
+    else if (!$('addSheet').hidden) closeAddSheet();
   });
 
   $('addSearchText').addEventListener('keydown', function (ev) {
@@ -3659,7 +4021,20 @@
     if (document.visibilityState === 'visible') checkDayRollover();
   }, 30000);
 
+  /* Writes are debounced by 120ms so that a burst of edits while
+     logging a meal is one write rather than nine. That is the right
+     trade while the app is in front of you and the wrong one the
+     instant it is not: a quick add is designed to be a tap and then a
+     pocket, and a tap that lands inside the debounce and is never
+     written is the one failure a personal log cannot have.
+
+     pagehide rather than beforeunload, because iOS fires beforeunload
+     unreliably on a home-screen app and pagehide on every path out of
+     the page — including the one into the back/forward cache. */
+  window.addEventListener('pagehide', function () { Store.flush(); });
+
   document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState !== 'visible') { Store.flush(); return; }
     if (document.visibilityState === 'visible') {
       /* Before the sync, not after. Coming back to the app in the
          morning, the date has to be right in the first frame you see —
@@ -3744,6 +4119,5 @@
   }
 
   render();
-  refreshUnits();
   doSync('startup');
 })();

@@ -26,11 +26,22 @@
     <button class="pill" id="syncPill" title="Sync status">&middot;</button>
     <div class="datenav">
       <button class="btn icon" id="prevDay" aria-label="Previous day">&larr;</button>
-      <span class="day" id="dayLabel">—</span>
+      <button class="day" id="dayLabel" aria-expanded="false" aria-controls="dateStrip">—</button>
       <button class="btn icon" id="nextDay" aria-label="Next day">&rarr;</button>
     </div>
   </div>
 </header>
+
+<!-- CATCH UP
+
+     Backfilling a weekend used to mean tapping the back arrow, logging,
+     tapping it again, and losing track of which day you were on. The
+     strip is the last week at a glance: which days have anything in
+     them, and one tap to any of them. Opened from the date, closed the
+     same way, so it costs nothing on a day you are not catching up. -->
+<div class="datestrip" id="dateStrip" hidden>
+  <div class="datestrip-in" id="dateStripIn" role="group" aria-label="Pick a day"></div>
+</div>
 
 <nav class="menu" id="menu" hidden aria-label="More">
   <button data-tab="foods">Foods &amp; recipes</button>
@@ -40,7 +51,15 @@
 
 <main class="wrap">
 
-<!-- ============================ TODAY ============================ -->
+<!-- ============================ TODAY ============================
+
+     Order is the argument this page makes. The number you came for is
+     first; the thing you came to do is second; everything that reports
+     on the day rather than changing it comes after.
+
+     Food used to sit fifth, below weight and water, which put the most
+     repeated action in the app a screen and a half down — reachable
+     only by scrolling past two cards you touch once a day. -->
 <section class="panel active" id="panel-today" role="tabpanel" aria-labelledby="tab-today">
 
   <div class="card budget" id="budgetCard">
@@ -54,23 +73,105 @@
     <div class="hint" id="targetBasis"></div>
   </div>
 
+  <!-- QUICK ADD
+
+       Coffee and a bagel, walking, is the most common thing that
+       happens in this app, and until now it cost a name, an amount, a
+       unit and a button — twice. The foods a person eats repeat, so
+       the ones they eat often and recently sit here with the amount
+       they usually take, and one tap logs it at that amount.
+
+       The tap commits. There is no confirm step, because a confirm on
+       the thing you do eight times a day is a toll; what you get
+       instead is a line saying what landed and an Undo beside it. -->
+  <div class="card" id="quickAddCard" hidden>
+    <div class="row" style="align-items:center;margin-bottom:var(--s-3)">
+      <h2 style="margin:0;flex:1">Quick add</h2>
+      <button class="btn ghost grow-0 tap" id="quickMore">Find another</button>
+    </div>
+    <div class="quickstrip" id="quickAdd"></div>
+  </div>
+
+  <div class="card">
+    <div class="row" style="align-items:center;margin-bottom:var(--s-3)">
+      <h2 style="margin:0;flex:1">Food</h2>
+    </div>
+
+    <!-- The composer is a name and a button, and nothing else.
+
+         It used to carry an amount box and a unit dropdown as well,
+         which made the common case — one of a thing you have eaten
+         before — pay for the rare one. Amount and unit now live in one
+         editor, opened deliberately, from the pencil beside any food
+         or from any line already logged. One control, one place. -->
+    <div class="row">
+      <label class="field" style="margin:0">
+        <span class="sr">Food</span>
+        <input type="text" id="foodPick" list="foodList" placeholder="What did you eat?" autocomplete="off">
+        <datalist id="foodList"></datalist>
+      </label>
+      <button class="btn primary grow-0 tap" id="addFoodLine">Add</button>
+    </div>
+
+    <!-- Matches from your own library, as you type, on the page rather
+         than in a dropdown. iOS renders a <datalist> as a cramped list
+         that matches only from the start of a name, so a recipe called
+         "Slow cooker chicken tikka masala" was invisible to anyone
+         typing "tikka" — which is what a person types. -->
+    <div id="pickList" hidden style="margin-top:var(--s-3)">
+      <div class="hint" id="pickStatus" style="margin-top:0"></div>
+      <ul class="list" id="pickResults"></ul>
+      <!-- Where the search runs out. USDA is generic and weak on
+           brands, and the two routes that actually work when it misses
+           are a barcode and the restaurant's own page — so they are
+           named here, at the moment of the miss, rather than left
+           behind a plus for the person to remember. -->
+      <div class="nextsteps" id="pickNext" hidden>
+        <button class="btn tap" data-route="search">Search USDA</button>
+        <button class="btn tap" data-route="scan">Scan the package</button>
+        <button class="btn tap" data-route="link">Paste a nutrition link</button>
+        <button class="btn tap" data-route="manual">Type the numbers</button>
+      </div>
+    </div>
+
+    <div class="row" style="margin-top:var(--s-3)">
+      <button class="btn tap" id="openAdd">Add food another way</button>
+    </div>
+    <div class="hint" id="foodHint">A name you have logged before fills itself in. A barcode, a link,
+      a photo, or a USDA search is behind <b>Add food another way</b>.</div>
+
+    <ul class="list" id="foodLog" style="margin-top:var(--s-4)"></ul>
+  </div>
+
   <div class="card">
     <h2>Macros</h2>
     <div class="macros" id="macros"></div>
   </div>
 
-  <div class="card">
-    <h2>Weight</h2>
-    <div class="row">
-      <label class="field" style="margin:0">
-        <span class="sr">Weight in pounds</span>
-        <input type="number" id="weightInput" inputmode="decimal" step="0.1" min="0" placeholder="lb">
-      </label>
-      <button class="btn grow-0" id="saveWeight">Save</button>
+  <!-- Weight collapses to one line once it is in. It is a once-a-day
+       action sitting above things done eight times a day, and a
+       finished action does not need its form left open. -->
+  <div class="card" id="weightCard">
+    <div class="row" style="align-items:center;margin-bottom:var(--s-3)">
+      <h2 style="margin:0;flex:1">Weight</h2>
+      <span class="kcal" id="weightDoneVal" hidden></span>
+      <button class="btn ghost grow-0 tap" id="weightChange" hidden>Change</button>
     </div>
-    <div class="hint" id="weightHint"></div>
+    <div id="weightForm">
+      <div class="row">
+        <label class="field" style="margin:0">
+          <span class="sr">Weight in pounds</span>
+          <input type="number" id="weightInput" inputmode="decimal" step="0.1" min="0" placeholder="lb">
+        </label>
+        <button class="btn grow-0 tap" id="saveWeight">Save</button>
+      </div>
+      <div class="hint" id="weightHint"></div>
+    </div>
   </div>
 
+  <!-- Water, compressed. Two buttons cover almost every pour; the
+       rest — the odd sizes, the slider, the exact figure, and taking
+       one back — is one tap away rather than five buttons wide. -->
   <div class="card">
     <div class="row" style="align-items:baseline;margin-bottom:var(--s-2)">
       <h2 style="margin:0;flex:1">Water</h2>
@@ -78,63 +179,27 @@
     </div>
     <div class="bar" style="margin-top:0"><i id="waterBar" style="width:0%"></i></div>
     <div class="row" style="margin-top:var(--s-3)">
-      <button class="btn grow-0" data-water="8">+8</button>
-      <button class="btn grow-0" data-water="12">+12</button>
-      <button class="btn grow-0" data-water="16">+16</button>
-      <button class="btn grow-0" data-water="24">+24</button>
-      <button class="btn ghost grow-0" data-water="-8" aria-label="Take back 8 oz">&minus;8</button>
-    </div>
-    <label class="field" style="margin-top:var(--s-3)">
-      <span class="sr">Ounces today</span>
-      <input type="range" id="waterSlider" min="0" max="128" step="4" value="0">
-    </label>
-    <div class="row">
-      <label class="field" style="margin:0"><span>Ounces today</span>
-        <input type="number" id="waterInput" inputmode="numeric" step="1" min="0"></label>
-      <button class="btn grow-0" id="saveWater">Set</button>
+      <button class="btn tap" data-water="8">+8</button>
+      <button class="btn tap" data-water="16">+16</button>
+      <button class="btn tap grow-0" id="waterMore" aria-expanded="false" aria-controls="waterExtra">More</button>
     </div>
     <div class="hint" id="waterHint"></div>
-  </div>
-
-  <div class="card">
-    <div class="row" style="align-items:center;margin-bottom:var(--s-3)">
-      <h2 style="margin:0;flex:1">Food</h2>
-      <button class="btn primary grow-0" id="openAdd" aria-label="More ways to add">+</button>
-    </div>
-    <!-- The box you type in comes before the list of what you already
-         ate. It used to come after, which read nicely on an empty day
-         and got worse with every entry: by dinner the one control you
-         came to this card to use had been pushed a screen and a half
-         down by the record of having used it. -->
-    <div>
-      <label class="field" style="margin:0 0 var(--s-2)">
-        <span class="sr">Food</span>
-        <input type="text" id="foodPick" list="foodList" placeholder="What did you eat?" autocomplete="off">
-        <datalist id="foodList"></datalist>
+    <div id="waterExtra" hidden>
+      <div class="row" style="margin-top:var(--s-3)">
+        <button class="btn tap" data-water="12">+12</button>
+        <button class="btn tap" data-water="24">+24</button>
+        <button class="btn ghost tap" data-water="-8" aria-label="Take back 8 oz">&minus;8</button>
+      </div>
+      <label class="field" style="margin-top:var(--s-3)">
+        <span class="sr">Ounces today</span>
+        <input type="range" id="waterSlider" min="0" max="128" step="4" value="0">
       </label>
       <div class="row">
-        <label class="field grow-0" style="margin:0;width:92px">
-          <span class="sr">How much</span>
-          <input type="text" id="foodAmount" inputmode="decimal" value="1" placeholder="1">
-        </label>
-        <label class="field" style="margin:0">
-          <span class="sr">Unit</span>
-          <select id="foodUnit"></select>
-        </label>
-        <button class="btn primary grow-0" id="addFoodLine">Add</button>
+        <label class="field" style="margin:0"><span>Ounces today</span>
+          <input type="number" id="waterInput" inputmode="numeric" step="1" min="0"></label>
+        <button class="btn grow-0 tap" id="saveWater">Set</button>
       </div>
-      <!-- Shown when a unit is picked that the food does not yet know
-           how to answer. Asking once is better than refusing forever. -->
-      <div class="row" id="unitLearn" hidden style="margin-top:var(--s-2)">
-        <label class="field" style="margin:0"><span id="unitLearnLabel">One serving is</span>
-          <input type="text" id="unitLearnValue" inputmode="decimal" placeholder="226"></label>
-        <button class="btn primary grow-0" id="unitLearnSave">Save</button>
-      </div>
-      <div class="hint" id="unitNote"></div>
-      <div class="hint" id="foodHint">Type a name you have logged before and it fills itself in. Anything
-        else &mdash; a barcode, a link, a photo, a name to look up &mdash; is behind the + above.</div>
     </div>
-    <ul class="list" id="foodLog" style="margin-top:var(--s-4)"></ul>
   </div>
 
   <div class="card">
@@ -467,8 +532,14 @@
     <h2 id="nfTitle">Add a food</h2>
     <label class="field"><span>Name</span>
       <input type="text" id="nfName" placeholder="Chobani 0% — 1 cup"></label>
+    <!-- The one place the serving weight belongs. Put "1 cup (226 g)"
+         here and this food can be logged in grams or ounces forever
+         after; leave it vague and the amount editor has to stop and
+         ask the first time somebody wants a conversion. -->
     <label class="field"><span>Serving described as</span>
-      <input type="text" id="nfServing" placeholder="1 cup / 100g / 1 bar"></label>
+      <input type="text" id="nfServing" placeholder="1 cup (226 g) / 100 g / 1 bar"></label>
+    <div class="hint" style="margin:-8px 0 var(--s-3)">Include a weight and grams and ounces both
+      work. Without one this food can only be logged in servings.</div>
     <div class="row" id="nfServingsRow" hidden>
       <label class="field"><span>Servings the recipe makes</span>
         <input type="number" id="nfServings" inputmode="decimal" step="0.5" min="0" placeholder="6"></label>
@@ -682,12 +753,17 @@
 
       <!-- BARCODE -->
       <div class="add-pane" id="addScanPane" hidden>
+        <!-- The still photo is the primary button because it is the
+             one that works. A live preview gives the decoder one shot
+             per frame while the camera hunts for focus; a still gives
+             it a whole sharp image. The camera stays, second, for
+             people who prefer it. -->
         <div class="row">
-          <button class="btn primary" id="scanBarcode">Open the camera</button>
-          <button class="btn grow-0" id="scanPhotoBtn">Use a photo</button>
+          <button class="btn primary tap" id="scanPhotoBtn">Take a photo of the barcode</button>
+          <button class="btn grow-0 tap" id="scanBarcode">Open the camera</button>
         </div>
-        <div class="hint">Hold the bars square to the frame and fill the width. If it will not catch,
-          take a still photo instead &mdash; a sharp still beats a moving preview every time.</div>
+        <div class="hint">Fill the frame with the bars and hold them square. The photo route decodes
+          far more often than the live preview &mdash; use the camera only if you prefer it.</div>
       </div>
 
       <!-- PHOTO OF A PLATE -->
@@ -732,34 +808,14 @@
       <div id="lookupPanel" hidden>
         <div class="hint" id="lookupStatus"></div>
         <ul class="list" id="lookupResults"></ul>
-      </div>
-      <div class="card" id="foodEdit" hidden style="margin:var(--s-3) 0 0;background:var(--paper)">
-        <h2 id="feTitle">Amount</h2>
-        <!-- The same amount-and-unit control as the main food row, on
-             purpose. This card used to be a grams box with no unit at
-             all, so anything looked up from USDA was stuck at 100 g. -->
-        <div class="row">
-          <label class="field grow-0" style="margin:0;width:92px"><span>How much</span>
-            <input type="text" id="feAmount" inputmode="decimal" value="1"></label>
-          <label class="field" style="margin:0"><span>Unit</span>
-            <select id="feUnit"></select></label>
+        <!-- Shown when the search came back thin or empty. A miss used
+             to end the sentence; these are the two routes that answer
+             where USDA cannot. -->
+        <div class="nextsteps" id="lookupNext" hidden>
+          <button class="btn tap" data-route="scan">Scan the package</button>
+          <button class="btn tap" data-route="link">Paste a nutrition link</button>
+          <button class="btn tap" data-route="manual">Type the numbers</button>
         </div>
-        <div class="row" id="feLearn" hidden style="margin-top:var(--s-2)">
-          <label class="field" style="margin:0"><span id="feLearnLabel">One serving is</span>
-            <input type="text" id="feLearnValue" inputmode="decimal"></label>
-          <button class="btn primary grow-0" id="feLearnSave">Save</button>
-        </div>
-        <div class="row">
-          <label class="field"><span>Cal</span><input type="number" id="feKcal" inputmode="numeric"></label>
-          <label class="field"><span>P (g)</span><input type="number" id="feP" inputmode="decimal"></label>
-          <label class="field"><span>C (g)</span><input type="number" id="feC" inputmode="decimal"></label>
-          <label class="field"><span>F (g)</span><input type="number" id="feF" inputmode="decimal"></label>
-        </div>
-        <div class="row">
-          <button class="btn primary" id="feSave">Log it</button>
-          <button class="btn grow-0" id="feCancel">Cancel</button>
-        </div>
-        <div class="hint" id="feHint"></div>
       </div>
       <!-- Quick add is for the meal you are never going to log properly:
            a restaurant plate, someone's birthday cake. It needs a name,
@@ -796,6 +852,60 @@
       </div>
     </div>
   </div>
+</div>
+
+<!-- ============================ THE AMOUNT EDITOR ============================
+
+     One control, one place, reachable from everywhere an amount can be
+     decided: the pencil beside a quick-add food, a suggestion as you
+     type, a line already logged, a result from a lookup.
+
+     It used to live inside the add sheet, which meant a line in
+     today's log could only be corrected through a sheet about adding
+     new food, and only after scrolling to find the panel. A sheet of
+     its own opens over whatever asked for it and closes back to it. -->
+<div class="sheet" id="amountSheet" hidden>
+  <div class="sheet-in">
+    <div class="sheet-head">
+      <b id="feTitle">Amount</b>
+      <button class="btn ghost grow-0 tap" id="feClose" aria-label="Close">&times;</button>
+    </div>
+    <div class="sheet-body">
+      <div class="row">
+        <label class="field grow-0" style="margin:0;width:92px"><span>How much</span>
+          <input type="text" id="feAmount" inputmode="decimal" value="1"></label>
+        <label class="field" style="margin:0"><span>Unit</span>
+          <select id="feUnit"></select></label>
+      </div>
+      <!-- Asked here and only here: at the moment grams or ounces were
+           actually chosen, not halfway through logging a breakfast. -->
+      <div class="row" id="feLearn" hidden style="margin-top:var(--s-2)">
+        <label class="field" style="margin:0"><span id="feLearnLabel">One serving is</span>
+          <input type="text" id="feLearnValue" inputmode="decimal"></label>
+        <button class="btn primary grow-0 tap" id="feLearnSave">Save</button>
+      </div>
+      <div class="hint" id="feLearnNote"></div>
+      <div class="row">
+        <label class="field"><span>Cal</span><input type="number" id="feKcal" inputmode="numeric"></label>
+        <label class="field"><span>P (g)</span><input type="number" id="feP" inputmode="decimal"></label>
+        <label class="field"><span>C (g)</span><input type="number" id="feC" inputmode="decimal"></label>
+        <label class="field"><span>F (g)</span><input type="number" id="feF" inputmode="decimal"></label>
+      </div>
+      <div class="row">
+        <button class="btn primary tap" id="feSave">Log it</button>
+        <button class="btn grow-0 tap" id="feCancel">Cancel</button>
+      </div>
+      <div class="hint" id="feHint"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Confirmation without a dialog. What landed, and a few seconds to
+     take it back. Undo over confirm: the log is the thing done most
+     often here, and it is done while walking. -->
+<div class="toast" id="toast" hidden>
+  <span id="toastText" role="status" aria-live="polite"></span>
+  <button class="btn grow-0 tap" id="toastUndo">Undo</button>
 </div>
 
 <div class="scanner" id="scannerOverlay" hidden>

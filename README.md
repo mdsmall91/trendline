@@ -178,6 +178,25 @@ the library. Quick-add covers restaurant meals. Within two weeks logging is
 mostly autocomplete, and every row is right — which no general database can
 promise.
 
+**3a. One tap for the thing you eat every day.** Under the calorie
+number sits a strip of the four foods you are most likely to be logging
+right now, each showing the amount you usually take. Tapping one logs it
+at that amount and says so, with an Undo beside it; the pencil next to
+it opens the amount editor for the day it was not the usual amount.
+
+The ranking is frequency discounted by age — a log is worth a full point
+on the day it happened and half a point every fortnight after — so a
+habit you have kept for a month outranks last night's one-off, and a
+habit you dropped in March falls off on its own. Backfilling Saturday
+ranks by the week up to Saturday, not by what you ate on the Monday
+after.
+
+Everything else — a barcode, a link, a photo, a USDA search, a set of
+numbers typed by hand — is behind a button that says **Add food another
+way**. It used to be a bare `+`, which asked you to remember which of
+five routes fitted the situation before it would tell you what they
+were.
+
 **3b. Macros over time.** The Trend page charts protein, carbs and fat by
 day against their targets, with the average of the logged days drawn across
 them — because one day of macros mostly reflects what was in the fridge.
@@ -188,16 +207,24 @@ are the remainder after protein and calories are settled — they land where
 they land, and colouring a day red for exceeding a number the app itself
 derived would be inventing a failure.
 
-**3c. One place to log, in the unit the food is sold in.** Type a name,
-an amount, and a unit. The unit list is built per food from what that
-food states about itself: something sold by weight offers grams and
-ounces, something measured in cups offers cups, tablespoons and
-teaspoons, and a cereal bar offers servings and says why.
+**3c. One amount editor, in the unit the food is sold in.** The
+composer on the Today page is a name and a button: the common case is a
+thing you have eaten before, and it logs at the amount you usually eat
+it in. Amount and unit live in one editor, opened deliberately — from
+the pencil beside a food, or from any line already in the log, which is
+also how yesterday's dinner gets corrected.
+
+Every unit is offered, and the ones the food cannot yet answer for are
+marked with an ellipsis. Choosing one of those asks what a serving
+weighs, once, and remembers — and it asks in the editor, where grams
+were deliberately chosen, rather than halfway through logging a
+breakfast. The question names the calories it applies to, because "one
+serving weighs how much" on its own invites the weight of the tub.
 
 Cups never convert to grams. A cup of flour and a cup of honey differ by
 a factor of two and a half, so a conversion would be inventing a
-density. The dropdown is short when the food is vague, which is the
-honest version of a dropdown that is always full and sometimes wrong.
+density. Changing the unit re-expresses the amount rather than
+reinterpreting the digits: one serving becomes 226 g, not one gram.
 
 The day's list shows what you typed — "4 oz" — rather than the servings
 it worked out to. `x0.567` is the same fact and a different thing: you
@@ -386,7 +413,7 @@ supabase/functions/     the things a browser may not do:
 SETUP.md                Supabase walkthrough
 STEPS-SHORTCUT.md       Garmin steps into the log, by hand-built Shortcut
 HEALTH-EXPORT.md        the same thing, via Health Auto Export
-tests/                  743 assertions
+tests/                  785 assertions
 ```
 
 ## Tests
@@ -394,7 +421,7 @@ tests/                  743 assertions
 ```
 node tests/tests.js          # 106 — the engine, incl. training calories
 node tests/sync-tests.js     # 101 — merge logic, wire format, session safety
-node tests/food-tests.js     #  93 — food lookup normalizers and library ranking
+node tests/food-tests.js     # 112 — food lookup normalizers, library and recency ranking
 node tests/gym-tests.js      #  42 — catalog search, substitution, real loads
 node tests/progress-tests.js #  77 — e1RM, RIR, load selection, the rules
 node tests/recipe-tests.js   # 123 — reading a page, declared and otherwise

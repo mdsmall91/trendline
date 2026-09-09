@@ -608,3 +608,197 @@ code {
 /* Panels inside the sheet are already cards elsewhere in the page; in
    here they are the content, so the card chrome comes off. */
 .sheet-body .card { border: 0; padding: 0; margin: var(--s-4) 0 0; background: none; }
+
+
+/* =============================================================
+   THUMB TARGETS
+
+   Everything repeated, one-handed, moving. WCAG 2.2 asks for 24x24 as
+   a floor; the iOS convention is 44x44 and that is what a phone held
+   in one hand while walking actually needs, so 44 is the number here.
+
+   Applied by opting in rather than to `.btn` wholesale: a row of four
+   macro fields in a settings form does not need forty-four pixels of
+   height each, and giving it them pushes the thing underneath off the
+   screen for no gain.
+   ============================================================= */
+
+.btn.tap { min-height: 44px; }
+.btn.icon { min-width: 44px; min-height: 44px; }
+/* The remove control on a logged line, and its equivalents. Small
+   glyphs, hit while holding a phone. */
+.list .btn.ghost { min-width: 44px; min-height: 44px; }
+
+
+/* =============================================================
+   QUICK ADD
+
+   The foods you eat, at the amount you eat them, one tap each. Two
+   columns rather than a scrolling row: a horizontal strip hides half
+   its contents behind a gesture, and the whole point is that the thing
+   you want is visible without looking for it.
+
+   Each is two controls in one frame. The wide half logs; the narrow
+   half opens the amount editor. Splitting them is what keeps the
+   common case free without giving up the precise one.
+   ============================================================= */
+
+/* One column, not two.
+
+   Two columns fit six foods in half the height and truncated every
+   name that mattered: "Slow cook…", "Everything…", "Greek yog…".
+   A strip whose whole purpose is recognition cannot afford to hide
+   the half of the word that distinguishes one bowl from another, so
+   the names get the full width and the list gets four entries. The
+   fifth onward are two letters away in the box underneath. */
+.quickstrip { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s-2); }
+.qa {
+  display: flex; align-items: stretch;
+  border: var(--hairline); border-radius: var(--radius);
+  background: var(--paper); overflow: hidden;
+}
+.qa-log {
+  flex: 1; min-width: 0; min-height: 44px;
+  display: flex; align-items: center; gap: var(--s-3);
+  text-align: left; background: none; border: 0;
+  padding: 6px var(--s-3); color: inherit; font: inherit; cursor: pointer;
+}
+.qa-log b {
+  flex: 1; min-width: 0;
+  font-size: 0.9375rem; font-weight: 500; line-height: 1.25;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.qa-log small {
+  flex: 0 0 auto;
+  font-family: var(--font-mono); font-size: 0.6875rem;
+  font-variant-numeric: tabular-nums; color: var(--text-muted);
+  white-space: nowrap;
+}
+.qa-log:hover { background: var(--surface-2); }
+.qa-log:hover b { color: var(--accent); }
+.qa-edit {
+  flex: 0 0 44px; min-height: 44px;
+  background: none; border: 0; border-left: var(--hairline);
+  color: var(--text-faint); font: inherit; font-size: 0.9375rem; cursor: pointer;
+}
+.qa-edit:hover { color: var(--accent); background: var(--surface-2); }
+
+
+/* =============================================================
+   WHERE A SEARCH RUNS OUT
+
+   Not an error message. The two routes that answer when the database
+   does not, named and tappable at the moment of the miss.
+   ============================================================= */
+
+.nextsteps {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--s-2); margin-top: var(--s-3);
+}
+
+
+/* =============================================================
+   ADDED · UNDO
+
+   Sits above the tab bar, says what landed, and offers to take it
+   back. Undo rather than a confirm step, because a confirm on the
+   action performed eight times a day is a toll paid eight times.
+
+   Inverted against the page in both themes: --text-strong on --paper
+   is dark-on-light in light mode and light-on-dark in dark, so the
+   contrast holds without a second palette.
+   ============================================================= */
+
+.toast {
+  position: fixed; z-index: 60;
+  left: var(--s-4); right: var(--s-4);
+  bottom: calc(72px + env(safe-area-inset-bottom, 0px) + var(--s-2));
+  max-width: calc(var(--page-max) - var(--s-8));
+  margin: 0 auto;
+  display: flex; align-items: center; gap: var(--s-3);
+  padding: var(--s-2) var(--s-2) var(--s-2) var(--s-4);
+  background: var(--text-strong); color: var(--paper);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 24px oklch(0 0 0 / 0.22);
+  font-size: 0.875rem;
+}
+.toast > span { flex: 1; min-width: 0; }
+.toast .btn {
+  background: none; border: 1px solid currentColor; color: inherit;
+  padding: 8px var(--s-3);
+}
+.toast .btn:hover { background: oklch(0.5 0 0 / 0.25); border-color: currentColor; }
+
+
+/* =============================================================
+   CATCH UP
+
+   The last week, with a dot on the days that have something in them.
+   Backfilling a weekend was previously two taps of an arrow per day
+   plus a label to re-read; it is one tap from here.
+   ============================================================= */
+
+.datestrip {
+  position: sticky; top: 52px; z-index: 19;
+  background: var(--paper); border-bottom: var(--hairline);
+}
+.datestrip-in {
+  max-width: var(--page-max); margin: 0 auto;
+  padding: var(--s-2) var(--s-4);
+  display: flex; gap: var(--s-2); overflow-x: auto;
+}
+.dchip {
+  flex: 0 0 auto; min-width: 48px; min-height: 48px;
+  appearance: none; cursor: pointer; font: inherit; font-size: 0.625rem;
+  letter-spacing: 0.06em; text-transform: uppercase;
+  border: var(--hairline); border-radius: var(--radius);
+  background: var(--surface); color: var(--text-muted);
+  padding: 4px 6px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
+}
+.dchip b {
+  font-family: var(--font-mono); font-size: 0.875rem; font-weight: 500;
+  color: var(--text); letter-spacing: 0;
+}
+.dchip i { display: block; width: 4px; height: 4px; border-radius: 50%; background: var(--accent); }
+.dchip i.none { background: transparent; }
+.dchip[aria-pressed="true"] {
+  background: var(--accent-soft); border-color: var(--accent); color: var(--accent);
+}
+.dchip[aria-pressed="true"] b { color: var(--accent); }
+
+
+/* The amount editor sits above the add sheet: a lookup result inside
+   that sheet opens it, and a panel that opened underneath its own
+   caller would look like nothing had happened. */
+#amountSheet { z-index: 56; }
+
+/* A logged line already opens the editor when tapped anywhere. The
+   word says so, because an affordance nobody can see is not one —
+   correcting yesterday's dinner should not require guessing that the
+   row is a button. */
+.list .rowedit .edit {
+  flex: 0 0 auto; font-size: 0.625rem; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--text-faint);
+}
+.list .rowedit:hover .edit { color: var(--accent); }
+
+
+/* The header ran out of room once the day arrows grew to a thumb-sized
+   target: forty-four pixels each, a sync pill and a date, against a
+   375px phone. The name of the app is the one thing on that row that
+   nobody needs — it is on the home screen icon and in the tab — so
+   on a narrow screen it is read out and not drawn. */
+@media (max-width: 430px) {
+  .brand {
+    position: absolute; width: 1px; height: 1px;
+    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+  }
+}
+
+/* The date is a control: it opens the week. */
+.datenav button.day {
+  appearance: none; border: 0; background: none; cursor: pointer;
+  min-height: 44px; padding: 0 var(--s-2);
+}
+.datenav button.day:hover { color: var(--text); }
