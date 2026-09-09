@@ -317,17 +317,30 @@ var Recipe = (function () {
   function summary(r) {
     if (!r) return '';
     if (r.reason === 'no-recipe') return 'That page has no recipe data in it.';
-    if (r.reason === 'no-nutrition') return 'That recipe does not publish nutrition. Name and servings filled in; the numbers are yours to add.';
+    if (r.reason === 'no-nutrition') {
+      return r.source === 'label'
+        ? 'No nutrition panel readable in that photo. Fill the frame with the panel and try again.'
+        : 'That recipe does not publish nutrition. Name and servings filled in; the numbers are yours to add.';
+    }
     var bits = [];
-    bits.push((r.source === 'read' ? 'Read off the page' : 'Per serving') +
+    bits.push((r.source === 'label' ? 'Read off the label'
+      : (r.source === 'read' ? 'Read off the page' : 'Per serving')) +
       (r.kcalDerived ? ', calories from the macros' : ''));
     if (r.servings) {
-      bits.push(r.servingsConfident
-        ? 'makes ' + r.servings
-        : 'yield reads "' + r.yieldText + '", so check the serving count');
+      /* "makes 6" is recipe language. A package does not make its
+         contents, it contains them — and a tub of one serving does not
+         need telling at all. */
+      if (r.source === 'label') {
+        if (r.servings !== 1) bits.push(r.servings + ' servings in the package');
+      } else {
+        bits.push(r.servingsConfident
+          ? 'makes ' + r.servings
+          : 'yield reads "' + r.yieldText + '", so check the serving count');
+      }
     }
     if (r.missing && r.missing.length) bits.push('missing ' + r.missing.join(' and '));
     if (r.source === 'read') bits.push('check it against the page');
+    if (r.source === 'label') bits.push('check it against the panel');
     return bits.join('  ·  ') + '.' + (r.note ? ' ' + r.note : '');
   }
 
@@ -447,10 +460,22 @@ var Recipe = (function () {
   var MICRO_FIELDS = ['fiber', 'sugar', 'addedSugar', 'satFat', 'sodium',
     'chol', 'potassium', 'calcium', 'iron', 'vitC', 'vitD'];
 
-  function fromRead(food, url) {
+  /* `source` says which of the three readers produced this, because the
+     three are not the same kind of fact and the app never lets them
+     look alike:
+
+       declared  a field the site published as structured data
+       read      the model's reading of a page's prose
+       label     the model's reading of a photographed panel
+
+     A label outranks prose — the numbers are printed and regulated
+     rather than written up — but it is still an image that can be
+     blurred, cropped or half in shadow, so it is checked, not trusted. */
+  function fromRead(food, url, source) {
+    source = source || 'read';
     if (!food || food.found === false) {
       return { ok: false, reason: 'no-nutrition', name: (food && food.name) || '', url: url || null,
-        servings: null, servingsConfident: false, yieldText: '', source: 'read',
+        servings: null, servingsConfident: false, yieldText: '', source: source,
         note: (food && food.note) || '' };
     }
     var per = {
@@ -491,13 +516,60 @@ var Recipe = (function () {
         ? food.serving.trim() : '1 serving',
       extras: null,
       micros: Object.keys(micros).length ? micros : null,
-      /* The distinction that matters. 'declared' came out of a field the
-         site published; 'read' came out of its prose. They are not the
-         same kind of fact and the app never lets them look alike. */
-      source: 'read',
+      source: source,
       note: food.note || '',
       missing: missing
     };
+  }
+
+  /* ---------------------------------------------------------------
+     A PHOTOGRAPH OF THE PANEL
+
+     The same job as reading a page, from a different source. A
+     packaged food has every number this app wants printed on the back
+     of it, including the eleven micronutrients nobody types by hand —
+     so photographing the panel is not a shortcut past the typing, it
+     is the only route that gets those at all.
+
+     Sent to the plate reader with mode 'label', which is the flag that
+     switches it from estimating a meal to transcribing a panel. It
+     comes back in the same shape a page read does, so everything
+     downstream is already written. */
+  function readLabel(file) {
+    var c = (typeof CONFIG !== 'undefined' && CONFIG) || {};
+    if (!c.SUPABASE_URL) return Promise.reject(new Error('Sync is not set up, and the reader runs through it.'));
+    if (typeof Sync === 'undefined' || !Sync.signedIn()) {
+      return Promise.reject(new Error('Sign in first — the reader runs on your own account.'));
+    }
+    if (typeof Plate === 'undefined') return Promise.reject(new Error('The image reader did not load.'));
+
+    return Plate.shrink(file).then(function (img) {
+      return Sync.accessToken().then(function (token) {
+        return fetch(endpoint(), {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + token,
+            'apikey': c.SUPABASE_ANON_KEY
+          },
+          body: JSON.stringify({ image: img.data, mediaType: img.mediaType, mode: 'label' })
+        });
+      });
+    }).then(function (res) {
+      return res.json().catch(function () { return {}; }).then(function (body) {
+        if (!res.ok) throw new Error(body.error || 'The label could not be read.');
+        /* An older copy of the function ignores the mode and reads the
+           photo as a plate, so it answers with items and no food. That
+           is a deploy that has not happened, not a label it could not
+           read, and saying so is the difference between a five-second
+           fix and an evening. */
+        if (!body.food) {
+          throw new Error('The reader on your Supabase project predates label photos. ' +
+            'Redeploy it: supabase functions deploy plate --no-verify-jwt');
+        }
+        return fromRead(body.food, null, 'label');
+      });
+    });
   }
 
   return {
@@ -507,7 +579,7 @@ var Recipe = (function () {
     normalize: normalize, fromBlocks: fromBlocks, summary: summary, fromRead: fromRead,
     looksLikeUrl: looksLikeUrl, tidyUrl: tidyUrl,
     /* network */
-    endpoint: endpoint, lookup: lookup, readPage: readPage
+    endpoint: endpoint, lookup: lookup, readPage: readPage, readLabel: readLabel
   };
 })();
 

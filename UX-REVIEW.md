@@ -157,6 +157,10 @@ and had not been visible since the add sheet was built. Fixed.
 **The still-photo barcode route is now the primary button**, with the
 live camera second.
 
+**A nutrition panel can be photographed** instead of typed, from the By
+hand route — which is the only way the micronutrients ever get filled in
+for a packaged food.
+
 **A catch-up strip** opens from the date: the last week, with a dot on
 the days that have anything in them, one tap to any of them.
 
@@ -244,4 +248,4 @@ Please don't spend time on:
 
 ---
 
-*Trendline · local-first PWA · 785 tests across 10 suites*
+*Trendline · local-first PWA · 810 tests across 10 suites*

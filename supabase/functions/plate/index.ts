@@ -1,5 +1,16 @@
 // =============================================================
-// TRENDLINE — SCAN A PLATE
+// TRENDLINE — READ A PHOTOGRAPH, OR A PAGE
+//
+// Three jobs, one function, because they share a key and a key is the
+// thing worth keeping in one place:
+//
+//   a photograph of a plate    what is on it, and roughly how much
+//   a photograph of a label    what the panel on the back states
+//   the text of a web page     what the page states
+//
+// The first is an estimate and says so everywhere. The other two are
+// transcription: the numbers exist and the job is to copy them without
+// inventing the ones that are missing.
 //
 // Takes a photograph of a meal and returns what is probably on it,
 // with probable amounts. Every word in that sentence is doing work.
@@ -193,6 +204,29 @@ The page text is given to you. Report ONLY what the page states.
 - If there is no nutrition on the page at all, set found false. Do not
   reconstruct it from the ingredients.`;
 
+const LABEL_SYSTEM = `You read a nutrition information panel from a photograph, for a food log.
+
+This is transcription, not estimation. The numbers are printed in front of you.
+
+- Report the figures for ONE serving, and put the serving the panel states in
+  the serving field — "2/3 cup (55g)", "1 bar (40 g)". US panels print the
+  serving at the top; if the panel gives both per-serving and per-100g columns,
+  use the per-serving one and say so in the serving field.
+- servings is the "servings per container" figure when the panel prints one.
+- A percentage of a Daily Value is not an amount. US panels print both; take
+  the amount. Where only the percentage is printed, omit the field.
+- Omit any field the panel does not print. An omitted field is correct and
+  useful; an invented one silently corrupts a food log. Do not fill gaps from
+  what you know about this kind of product.
+- Units are as printed: sodium, cholesterol, potassium, calcium and iron in
+  MILLIGRAMS, vitamin D in MICROGRAMS, everything else in grams.
+- The name should be the product as the package names it, brand included, if
+  any of the front of the package is visible. If only the panel is in frame,
+  leave the name empty rather than guessing at the product.
+- If a figure is blurred, cropped or unreadable, omit it. A missing number is a
+  box the person fills in; a misread one is a number they will never check.
+- If the photograph is not a nutrition panel at all, set found false.`;
+
 const SYSTEM = `You estimate what is on a plate from a photograph, for a food log.
 
 Identify each distinct food and estimate its edible weight in grams.
@@ -217,7 +251,9 @@ Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
   if (req.method === 'GET' || req.method === 'HEAD') {
     return new Response(req.method === 'HEAD' ? null : JSON.stringify({
-      ok: true, service: 'trendline-plate', expects: 'POST { image, mediaType }',
+      ok: true, service: 'trendline-plate',
+      expects: 'POST { image, mediaType, mode? } or { text, url }',
+      modes: ['plate', 'label', 'page'],
     }), { status: 200, headers: { ...CORS, 'Content-Type': 'application/json' } });
   }
   if (req.method !== 'POST') return json({ error: 'POST an image.' }, 405);
@@ -235,12 +271,13 @@ Deno.serve(async (req: Request) => {
     }, 503);
   }
 
-  let image = '', mediaType = 'image/jpeg', pageText = '', pageUrl = '';
+  let image = '', mediaType = 'image/jpeg', pageText = '', pageUrl = '', mode = '';
   try {
     const body = await req.json();
     pageText = String(body?.text ?? '').slice(0, 60_000);
     pageUrl = String(body?.url ?? '').slice(0, 500);
     image = String(body?.image ?? '');
+    mode = String(body?.mode ?? '');
     if (!image && !pageText) throw new Error('Nothing to read.');
     if (image) {
       mediaType = String(body?.mediaType ?? 'image/jpeg');
@@ -253,7 +290,14 @@ Deno.serve(async (req: Request) => {
     return json({ error: e instanceof Error ? e.message : 'Bad request.' }, 400);
   }
 
+  /* A photograph of a nutrition panel is the same job as a page: one
+     food, stated per serving, with whatever the source bothered to
+     print. So it takes the page's tool and its own prompt, and comes
+     back in the page's shape — which the app already knows how to
+     land in the add-a-food form. */
+  const readingLabel = !!image && mode === 'label';
   const readingPage = !image;
+  const readingFood = readingPage || readingLabel;
 
   const control = new AbortController();
   const timer = setTimeout(() => control.abort(), TIMEOUT_MS);
@@ -269,9 +313,9 @@ Deno.serve(async (req: Request) => {
       body: JSON.stringify({
         model: MODEL,
         max_tokens: 2000,
-        system: readingPage ? PAGE_SYSTEM : SYSTEM,
-        tools: [readingPage ? PAGE_TOOL : TOOL],
-        tool_choice: { type: 'tool', name: readingPage ? 'record_food' : 'record_plate' },
+        system: readingLabel ? LABEL_SYSTEM : (readingPage ? PAGE_SYSTEM : SYSTEM),
+        tools: [readingFood ? PAGE_TOOL : TOOL],
+        tool_choice: { type: 'tool', name: readingFood ? 'record_food' : 'record_plate' },
         messages: [{
           role: 'user',
           content: readingPage
@@ -282,7 +326,12 @@ Deno.serve(async (req: Request) => {
               }]
             : [
                 { type: 'image', source: { type: 'base64', media_type: mediaType, data: image } },
-                { type: 'text', text: 'What is on this plate, and roughly how much of each?' },
+                {
+                  type: 'text',
+                  text: readingLabel
+                    ? 'What does this nutrition panel state, and for what serving?'
+                    : 'What is on this plate, and roughly how much of each?',
+                },
               ],
         }],
       }),
@@ -325,10 +374,13 @@ Deno.serve(async (req: Request) => {
       return json({ error: 'The reader did not return a result it could use.' }, 502);
     }
 
-    if (readingPage) {
+    if (readingFood) {
       return json({
         ok: true,
         food: block.input ?? null,
+        /* Echoed so the app can tell a label read from a page read
+           without having to remember what it asked for. */
+        mode: readingLabel ? 'label' : 'page',
         usage: data.usage ?? null,
         model: MODEL,
       });

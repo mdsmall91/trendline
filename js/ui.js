@@ -14,7 +14,7 @@
   /* Bumped by hand on each deploy, and shown under Setup → Version.
      Its only job is to let "it still looks old" be answered with a
      number instead of a guess. Keep it in step with CACHE in sw.js. */
-  var BUILD = '2026-09-09.30';
+  var BUILD = '2026-09-09.31';
 
   /* THE HALF-DEPLOYED PAGE
 
@@ -2379,7 +2379,14 @@
            servings forever, which is how cottage cheese ended up
            impossible to log in ounces. */
         name: name, serving: $('inServing').value.trim(),
-        kcal: vals.kcal, protein: vals.protein, carbs: vals.carbs, fat: vals.fat
+        kcal: vals.kcal, protein: vals.protein, carbs: vals.carbs, fat: vals.fat,
+        /* A food typed in by hand has no micronutrients and should not
+           pretend to. One read off a label has eleven of them, and
+           dropping them here would throw away the entire reason for
+           photographing the panel instead of typing four numbers.
+           undefined rather than null, because addFood keeps what it
+           already had when a field is absent. */
+        micros: pendingMicros || undefined
       });
       Store.addEntry(day, {
         foodId: f.id, name: f.name, qty: amount, amount: amount, unit: 'serving',
@@ -2396,6 +2403,7 @@
     ['inServing', 'inKcal', 'inP', 'inC', 'inF'].forEach(function (id) { $(id).value = ''; });
     $('inlineNew').hidden = true;
     $('foodPick').value = '';
+    pendingMicros = null;
     closeLookup();
     closeAddSheet();
     render();
@@ -3697,8 +3705,86 @@
     $('inlineName').textContent = name;
     $('inlineNew').hidden = false;
     ['inServing', 'inKcal', 'inP', 'inC', 'inF'].forEach(function (id) { $(id).value = ''; });
+    /* A panel left over from the last thing read would attach itself
+       to whatever is typed in next. */
+    pendingMicros = null;
     $('inKcal').focus();
   }
+
+  /* ---------------------------------------------------------------
+     PHOTOGRAPH THE LABEL
+
+     Typing a food in by hand gets calories and nothing else. The panel
+     on the back of the package states the serving, the four macros and
+     eleven micronutrients, and photographing it is the only route that
+     ever brings those last eleven in — nobody has typed a vitamin D
+     figure into a food log by hand and nobody is going to.
+
+     It lands in the same panel the typing would have filled, filled
+     in, rather than saving itself. A photograph of printed numbers is
+     a better source than prose on a web page and still an image that
+     can be blurred, cropped or half in shadow. One glance, then Save.
+     --------------------------------------------------------------- */
+
+  function readLabelPhoto(file) {
+    if (!file) return;
+    var status = $('labelStatus');
+    status.textContent = 'Reading the label\u2026';
+    $('labelShot').disabled = true;
+    $('inLabel').disabled = true;
+
+    Recipe.readLabel(file).then(function (r) {
+      status.textContent = Recipe.summary(r);
+      /* Nothing readable. The name is not worth carrying over from a
+         photo the reader could not make sense of. */
+      if (r.reason === 'no-nutrition') return;
+
+      var typed = $('addManualName').value.trim();
+      /* What the package calls itself beats what was typed before the
+         photograph was taken, because the package is the authority on
+         its own name — but a name already typed is not thrown away for
+         a panel photographed with the front of the box out of frame. */
+      var name = r.name || typed || 'Unnamed food';
+      $('addManualName').value = name;
+      $('inlineName').textContent = name;
+
+      $('inServing').value = r.servingLabel || '';
+      var per = r.per || {};
+      $('inKcal').value = per.kcal === null || per.kcal === undefined ? '' : String(per.kcal);
+      $('inP').value = per.protein === null || per.protein === undefined ? '' : String(per.protein);
+      $('inC').value = per.carbs === null || per.carbs === undefined ? '' : String(per.carbs);
+      $('inF').value = per.fat === null || per.fat === undefined ? '' : String(per.fat);
+
+      pendingMicros = r.micros || null;
+      $('inlineNew').hidden = false;
+      /* Land on whatever the panel did not give up, so the one box
+         that still needs a person is the one under the cursor. */
+      var firstGap = { calories: 'inKcal', protein: 'inP', carbs: 'inC', fat: 'inF' }[(r.missing || [])[0]];
+      $(firstGap || 'inSave').focus();
+    }).catch(function (e) {
+      status.textContent = e.message || 'That label could not be read.';
+    }).then(function () {
+      $('labelShot').disabled = false;
+      $('inLabel').disabled = false;
+      /* Cleared so photographing the same file twice still fires. */
+      $('labelFile').value = '';
+    });
+  }
+
+  $('labelShot').addEventListener('click', function () { $('labelFile').click(); });
+  $('inLabel').addEventListener('click', function () {
+    /* The same input, from inside the panel. Deliberately NOT via
+       showAddPane: this button lives in the panel that call would
+       hide, so cancelling the photo picker would take the half-typed
+       numbers off the screen. The manual pane above is already showing
+       — it is the only way to reach this panel — so the status line is
+       already where it can be read. */
+    $('addManualName').value = $('inlineName').textContent || $('addManualName').value;
+    $('labelFile').click();
+  });
+  $('labelFile').addEventListener('change', function () {
+    readLabelPhoto(this.files && this.files[0]);
+  });
   $('addManualGo').addEventListener('click', function () {
     openManualFor($('addManualName').value.trim());
   });

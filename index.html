@@ -787,6 +787,19 @@
                    placeholder="What was it?"></label>
           <button class="btn primary grow-0" id="addManualGo">Next</button>
         </div>
+        <!-- If the package is in your hand, none of this needs typing.
+             The panel on the back states the serving, the macros and
+             eleven micronutrients — the last of which nobody has ever
+             typed in by hand, so this is the only route that gets them.
+
+             No capture attribute: iOS then offers the photo library as
+             well as the camera, and the label you photographed in the
+             shop last week is as good as the one in front of you. -->
+        <div class="row" style="margin-top:var(--s-2)">
+          <button class="btn tap" id="labelShot">Photograph the label</button>
+          <input type="file" id="labelFile" accept="image/*" hidden>
+        </div>
+        <div class="hint" id="labelStatus"></div>
         <div class="hint">For the restaurant plate you will never log properly. Calories alone is
           allowed &mdash; a rough number beats a missing day.</div>
       </div>
@@ -843,6 +856,9 @@
              micronutrient coverage down every time you eat it. Both
              routes that bring a full panel with them belong here, at
              the moment the choice is actually being made. -->
+        <div class="row" style="margin-bottom:var(--s-2)">
+          <button class="btn tap" id="inLabel">Photograph the label</button>
+        </div>
         <div class="row" style="margin-bottom:var(--s-2)">
           <button class="btn" id="inLookup">Look it up instead</button>
           <button class="btn grow-0" id="inScan">Scan barcode</button>

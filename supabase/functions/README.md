@@ -168,8 +168,25 @@ runs on the server.
 
 ## `plate`
 
-**Called by:** Today → *Scan a plate*
+**Called by:** *Add food another way* → Photo, By hand → *Photograph the label*,
+and Link
 **Requires:** a signed-in account, and `ANTHROPIC_API_KEY` in the project secrets
+
+Three jobs, one function, because they share a key and a key is worth keeping in
+one place. The mode is chosen by what you post:
+
+| Post | Mode | Returns |
+| --- | --- | --- |
+| `{ image, mediaType }` | a plate | `items[]`, each with a portion and a confidence |
+| `{ image, mediaType, mode: 'label' }` | a nutrition panel | one `food`, per serving |
+| `{ text, url }` | a web page | one `food`, per serving |
+
+The first is an estimate and says so everywhere. The other two are transcription:
+the numbers already exist and the job is to copy them without inventing the ones
+that are missing. Both use the same tool and come back in the same shape, so the
+app has one thing to render either way.
+
+### Reading a plate
 
 Photographs a meal and returns what is probably on it, with probable amounts.
 Every word there is load-bearing.
@@ -196,6 +213,22 @@ An estimate presented as a measurement would be worse than no feature at all: it
 would quietly poison the calorie history that the adaptive TDEE — energy balance
 run backwards over exactly this data — is computed from.
 
+### Reading a label
+
+The opposite problem, and a much easier one. A nutrition panel is printed,
+regulated and unambiguous — there is nothing to estimate. So the prompt is a
+transcription brief: report the per-serving column, take amounts rather than
+Daily Value percentages, and **omit anything unreadable**. A missing number is a
+box you fill in; a misread one is a number you will never check again.
+
+This is the only route that brings the eleven micronutrients in. Typing a food
+in by hand gets calories and macros, because nobody has ever typed a vitamin D
+figure into a food log and nobody is going to. The panel on the back of the
+package has them printed on it.
+
+The result lands in the ordinary add-a-food panel, filled in rather than saved,
+like every other route — so it is checked before it counts.
+
 ### Cost
 
 One image plus a short reply to Claude Sonnet, on the order of a cent or two per
@@ -209,6 +242,13 @@ slow part on a phone.
 It answers 503 with a sentence saying so, rather than failing in a way that looks
 like a bug. Set the secret and there is nothing to redeploy — secrets are read on
 the next invocation.
+
+### If the deployed copy predates label mode
+
+An older copy ignores `mode` and reads the photograph as a plate, so it answers
+with `items` and no `food`. The app checks for exactly that and says which
+command fixes it, because "the label could not be read" would send you looking
+at the photograph instead of at the deploy.
 
 ---
 

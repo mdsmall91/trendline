@@ -264,6 +264,104 @@
   check('a bare word does not', !Recipe.looksLikeUrl('https://localhost'));
   check('an empty string does not', !Recipe.looksLikeUrl(''));
 
+  /* ---------- a photographed nutrition panel ----------
+
+     Same tool, same response shape and the same fromRead as a page
+     read; what differs is where the numbers came from, and the app
+     never lets the three sources look alike. */
+
+  var LABEL = {
+    found: true,
+    name: 'Chobani Greek Yogurt, Plain 0%',
+    serving: '1 container (150 g)',
+    servings: 1,
+    kcal: 90, protein: 16, carbs: 6, fat: 0,
+    fiber: 0, sugar: 4, satFat: 0, sodium: 65, chol: 10,
+    potassium: 240, calcium: 190, iron: 0, vitD: 0
+  };
+
+  var lab = Recipe.fromRead(LABEL, null, 'label');
+  check('a label read is complete', lab.ok === true, JSON.stringify(lab.missing));
+  check('the label names the source', lab.source === 'label', lab.source);
+  check('the product name comes through', lab.name === 'Chobani Greek Yogurt, Plain 0%', lab.name);
+  check('the stated serving is kept verbatim',
+    lab.servingLabel === '1 container (150 g)', lab.servingLabel);
+  eq('calories per serving', lab.per.kcal, 90);
+  eq('protein per serving', lab.per.protein, 16);
+  check('the panel brings its micronutrients',
+    lab.micros && lab.micros.sodium === 65 && lab.micros.calcium === 190,
+    JSON.stringify(lab.micros));
+  check('a zero on the panel is a zero, not a gap',
+    lab.micros.fiber === 0 && lab.micros.vitD === 0, JSON.stringify(lab.micros));
+
+  /* The whole point of the route: fields nobody types by hand. */
+  check('every micronutrient the panel printed is carried',
+    Object.keys(lab.micros).sort().join(',') ===
+      'calcium,chol,fiber,iron,potassium,satFat,sodium,sugar,vitD',
+    Object.keys(lab.micros).sort().join(','));
+
+  /* A field the panel does not print stays absent. A US panel prints
+     no vitamin C any more, and inventing one would be worse than the
+     gap it fills. */
+  check('an unprinted nutrient is absent rather than zero',
+    !('vitC' in lab.micros), JSON.stringify(lab.micros));
+
+  /* Source is what the summary leads with, because it is what tells
+     the person how hard to look at the numbers. */
+  check('the summary says it came off the label',
+    Recipe.summary(lab).indexOf('Read off the label') === 0, Recipe.summary(lab));
+  check('the summary asks for a glance at the panel',
+    Recipe.summary(lab).indexOf('check it against the panel') > 0, Recipe.summary(lab));
+  /* "makes 1" is recipe language. A one-serving tub says nothing. */
+  check('a single-serving package does not announce its serving count',
+    Recipe.summary(lab).indexOf('makes') < 0 && Recipe.summary(lab).indexOf('package') < 0,
+    Recipe.summary(lab));
+  var box = Recipe.fromRead({
+    found: true, name: 'Cereal', serving: '1 cup (40 g)', servings: 12,
+    kcal: 150, protein: 3, carbs: 33, fat: 1
+  }, null, 'label');
+  check('a multi-serving package counts them the way a package would',
+    Recipe.summary(box).indexOf('12 servings in the package') > 0, Recipe.summary(box));
+  check('a recipe still says makes',
+    Recipe.summary(Recipe.fromRead({
+      found: true, name: 'Stew', serving: '1 bowl', servings: 6,
+      kcal: 400, protein: 30, carbs: 20, fat: 18
+    }, 'https://x.test')).indexOf('makes 6') > 0);
+  check('a page read still says page',
+    Recipe.summary(Recipe.fromRead(LABEL, 'https://x.test', 'read'))
+      .indexOf('Read off the page') === 0);
+  check('fromRead still defaults to a page read',
+    Recipe.fromRead(LABEL, 'https://x.test').source === 'read');
+
+  /* Nothing readable in the photo. Not an error — an answer. */
+  var noPanel = Recipe.fromRead({ found: false, name: '', note: 'A cat.' }, null, 'label');
+  check('an unreadable photo is not ok', noPanel.ok === false);
+  check('an unreadable photo keeps the label source', noPanel.source === 'label');
+  check('and says what to do about it',
+    Recipe.summary(noPanel).indexOf('Fill the frame with the panel') > 0,
+    Recipe.summary(noPanel));
+  check('a page with no nutrition still gets the page sentence',
+    Recipe.summary(Recipe.fromRead({ found: false, name: 'Stew' }, 'https://x.test'))
+      .indexOf('does not publish nutrition') > 0);
+
+  /* A panel photographed at an angle can lose a line. What survives
+     should still land, with the gap named rather than filled. */
+  var partial = Recipe.fromRead({
+    found: true, name: 'Bar', serving: '1 bar (40 g)', protein: 10, carbs: 22, fat: 7
+  }, null, 'label');
+  check('a missing calorie line is derived from the macros',
+    partial.kcalDerived === true && partial.per.kcal === 191, partial.per.kcal);
+  check('and the derivation is not hidden',
+    Recipe.summary(partial).indexOf('calories from the macros') > 0, Recipe.summary(partial));
+
+  var noMacros = Recipe.fromRead({
+    found: true, name: 'Bar', serving: '1 bar', kcal: 190
+  }, null, 'label');
+  check('missing macros are listed rather than guessed',
+    noMacros.ok === false && noMacros.missing.join(',') === 'protein,carbs,fat',
+    noMacros.missing.join(','));
+  check('nothing readable means no micro panel at all', noMacros.micros === null);
+
   var summary = { passes: passes, failures: failures.length, detail: failures };
   root.__results = summary;
   if (typeof document !== 'undefined') {

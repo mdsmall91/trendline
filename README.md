@@ -230,6 +230,20 @@ The day's list shows what you typed — "4 oz" — rather than the servings
 it worked out to. `x0.567` is the same fact and a different thing: you
 cannot check a number you do not recognise.
 
+**3e. Photograph the nutrition panel.** Under *Add food another way → By
+hand*, and again inside the panel that asks for the numbers. If the
+package is in your hand, none of it needs typing: the label states the
+serving, the four macros and up to eleven micronutrients, and it is the
+only route that ever brings those last eleven in. Nobody types a vitamin
+D figure into a food log by hand.
+
+It reads as transcription rather than estimation — the numbers are
+printed, regulated and unambiguous — and the prompt is told to omit
+anything blurred or cropped rather than guess it. What comes back lands
+in the same form the typing would have filled, marked *read off the
+label*, for one glance before it counts. Requires an account, like the
+other two readers, and degrades to typing when there is no signal.
+
 **3d. Micronutrients, with the denominator shown.** Percentage of the
 FDA Daily Value for eighteen nutrients, split into the ones that move
 day to day (fibre, sodium, saturated fat, added sugar, cholesterol,
@@ -413,7 +427,7 @@ supabase/functions/     the things a browser may not do:
 SETUP.md                Supabase walkthrough
 STEPS-SHORTCUT.md       Garmin steps into the log, by hand-built Shortcut
 HEALTH-EXPORT.md        the same thing, via Health Auto Export
-tests/                  785 assertions
+tests/                  810 assertions
 ```
 
 ## Tests
@@ -424,7 +438,7 @@ node tests/sync-tests.js     # 101 — merge logic, wire format, session safety
 node tests/food-tests.js     # 112 — food lookup normalizers, library and recency ranking
 node tests/gym-tests.js      #  42 — catalog search, substitution, real loads
 node tests/progress-tests.js #  77 — e1RM, RIR, load selection, the rules
-node tests/recipe-tests.js   # 123 — reading a page, declared and otherwise
+node tests/recipe-tests.js   # 148 — reading a page or a label, declared and otherwise
 node tests/units-tests.js    #  63 — unit conversion, and what it refuses
 node tests/micro-tests.js    #  69 — micronutrients, units, and coverage
 node tests/plate-tests.js    #  44 — reading a photographed meal, and what it drops
