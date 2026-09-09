@@ -24,7 +24,7 @@
    no reason to re-fetch them on every launch.
    ============================================================= */
 
-var CACHE = 'trendline-v27';
+var CACHE = 'trendline-v28';
 
 var SHELL = [
   './', './index.html', './manifest.webmanifest', './icon.svg',
@@ -58,10 +58,22 @@ self.addEventListener('install', function (e) {
     caches.open(CACHE)
       /* addAll is all-or-nothing: one 404 and the whole install fails,
          leaving no offline copy at all. Each file is added on its own
-         so a single missing asset cannot take the shell down with it. */
+         so a single missing asset cannot take the shell down with it.
+
+         cache:'reload' rather than a plain c.add, because c.add uses an
+         ordinary fetch and an ordinary fetch is answered by the
+         browser's own HTTP cache. GitHub Pages sends max-age=600, so a
+         worker installing within ten minutes of a deploy would happily
+         precache the copy the deploy replaced — baking the previous
+         release into the cache named after the new one, where it then
+         survives every later revalidation. The offline copy has to come
+         from the network that triggered this install, not from
+         whatever the browser had lying around. */
       .then(function (c) {
         return Promise.all(SHELL.map(function (u) {
-          return c.add(u).catch(function () { /* skip, not fatal */ });
+          return fetch(u, { cache: 'reload' }).then(function (res) {
+            if (res && res.ok) return c.put(u, res);
+          }).catch(function () { /* skip, not fatal */ });
         }));
       })
       .then(function () { return self.skipWaiting(); })

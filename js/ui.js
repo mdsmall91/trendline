@@ -14,7 +14,55 @@
   /* Bumped by hand on each deploy, and shown under Setup → Version.
      Its only job is to let "it still looks old" be answered with a
      number instead of a guess. Keep it in step with CACHE in sw.js. */
-  var BUILD = '2026-09-08.28';
+  var BUILD = '2026-09-09.29';
+
+  /* THE HALF-DEPLOYED PAGE
+
+     A deploy changes this file and index.html together, and GitHub
+     Pages puts max-age=600 on both. For ten minutes afterwards a
+     browser that visited recently can pair a fresh copy of this script
+     with an index.html that predates it, because the two are separate
+     objects in the HTTP cache and expire independently. Until now that
+     was survivable: the old markup and the old script were close
+     enough that the mismatch mostly rendered.
+
+     It is not survivable any more. This release moved the food
+     composer, the amount editor and the quick-add strip, so the
+     elements this file binds to on the way up do not exist in the
+     previous markup — and binding a listener to null throws before the
+     first render, leaving a page that is not stale but dead.
+
+     Defending every lookup would be the wrong fix: it would turn a
+     loud, correct failure into a hundred quiet ones. So notice it
+     once, here. If the markup this script was built against is not on
+     the page, the page is the stale half of the pair. Reload; the
+     service worker fetches HTML network-first with revalidation, so
+     the second attempt gets the matching copy.
+
+     Once only, and recorded in sessionStorage rather than attempted
+     again: a reload loop against a genuinely broken deploy is worse
+     than the broken deploy, because it takes away the screen you would
+     have read the problem off. */
+  if (!$('quickAddCard')) {
+    var RELOADED = 'tl.staleShell';
+    var tried = false;
+    try { tried = !!sessionStorage.getItem(RELOADED); } catch (e) {}
+    if (!tried) {
+      try { sessionStorage.setItem(RELOADED, '1'); } catch (e) {}
+      location.reload();
+      return;
+    }
+    /* Second time through: say so rather than throwing. */
+    if (document.body) {
+      document.body.insertAdjacentHTML('afterbegin',
+        '<div class="note" style="margin:var(--s-4)">This page is an older copy than the code ' +
+        'that runs it, and reloading did not fix it. Close the app and open it again; if it ' +
+        'persists, the deploy is half-published.</div>');
+    }
+    return;
+  }
+  try { sessionStorage.removeItem('tl.staleShell'); } catch (e) {}
+
   var day = WL.todayKey();
   var range = 30;
   var foodFilterText = '';
