@@ -307,6 +307,9 @@ var FoodAPI = (function () {
       },
       servingGrams: scalable ? grams : 100,
       source: 'usda',
+      /* Kept so a row can say which USDA it came from. "Branded" and
+         "Foundation" are not the same kind of answer. */
+      dataType: String(food.dataType || ''),
       sourceId: String(food.fdcId || '')
     };
   }
@@ -465,6 +468,185 @@ var FoodAPI = (function () {
      whole foods, and for "chicken breast" they are the right answer.
      Branded is included because a lot of what people actually eat has
      a label on it, but it is noisier and sits lower in the results. */
+  /* ---------------------------------------------------------------
+     RANKING WHAT USDA SENDS BACK
+
+     Three things were wrong with the search, and they compounded.
+
+     One: the query went over as-is, and USDA's default is an OR match
+     across every field. "fresh strawberries" matched 51,345 foods and
+     the first eight were basil, parsley, peppermint, rosemary,
+     spearmint, thyme, dill and queso fresco — every one of them on the
+     word "fresh". requireAllWords=true takes that to 1,060.
+
+     Two: with all the words required, Branded takes over. Those same
+     1,060 lead with strawberry ice cream, strawberry soda and
+     strawberry licorice, because a product catalogue of two million
+     items will always out-supply a curated list of eight thousand and
+     every one of those products has "fresh strawberry" written on it
+     somewhere. So the whole-food sets have to be preferred explicitly.
+
+     Three: Survey (FNDDS) was not being asked at all, and it is where
+     everyday prepared food lives. Plain oatmeal is "Oatmeal, NFS" in
+     FNDDS and nothing at all in Foundation or SR Legacy, which file
+     the ingredient as "Oats, whole grain, rolled". Searching for
+     oatmeal could not find oatmeal because oatmeal was not in the
+     room.
+
+     What is left after that is ordering, and it is done here rather
+     than trusted to USDA's relevance score, which does not know that a
+     person typing two words into a food log wants the food and not the
+     confectionery named after it.
+
+     Scored on the raw row, before normalising: dataType and brand are
+     the two strongest signals and both are thrown away by the time a
+     row is in the app's own shape.
+     --------------------------------------------------------------- */
+
+  /* Whole-food sets are curated, generically named and stated per
+     100 g. Branded is a supermarket shelf. Neither is better in
+     general; one is much more often what somebody means. */
+  var DATA_TYPE_BONUS = {
+    'foundation': 10,
+    'sr legacy': 10,
+    'survey (fndds)': 7,
+    'branded': 0
+  };
+
+  function words(text) {
+    return String(text || '')
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]+/g, ' ')
+      .split(/\s+/)
+      .filter(Boolean);
+  }
+
+  /* The smallest stemmer that fixes the actual complaint.
+
+     "strawberries" and "strawberry" share no prefix — they part
+     company at the tenth character — so a prefix test misses every
+     branded row that writes the fruit in the singular, and a plural is
+     what a person types. Three rules cover the plurals a food database
+     contains; anything cleverer would start merging words that are not
+     the same word. */
+  function stem(w) {
+    if (w.length > 4 && w.slice(-3) === 'ies') return w.slice(0, -3) + 'y';
+    if (w.length > 3 && w.slice(-1) === 's' && w.slice(-2) !== 'ss') return w.slice(0, -1);
+    return w;
+  }
+
+  /* Same word, allowing for a plural on either side and for the longer
+     one being a qualified form of the shorter — "oat" and "oatmeal"
+     are not the same food, but "strawberr(y|ies)" is one word. */
+  function sameWord(a, b) {
+    var x = stem(a), y = stem(b);
+    return x.indexOf(y) === 0 || y.indexOf(x) === 0;
+  }
+
+  function usdaScore(row, queryWords, queryNorm) {
+    if (!row || typeof row !== 'object') return -Infinity;
+    var desc = String(row.description || '');
+    var nameWords = words(desc);
+    if (!nameWords.length) return -Infinity;
+
+    var score = 0;
+
+    /* Typed the whole name of a thing: you meant that thing. */
+    if (nameWords.join(' ') === queryNorm) score += 40;
+
+    /* How much of what was typed actually appears in the NAME. USDA
+       requires all the words across every field it holds, which is how
+       an ice cream qualifies on an ingredient list. The name is the
+       part a person is going to read.
+
+       Not all the words are worth the same. English puts the head noun
+       last — "fresh strawberries" is a kind of strawberry — and the
+       words in front of it are modifiers that identify nothing on
+       their own. Matching "fresh" and missing "strawberries" is how
+       eight herbs came back; matching "strawberries" and missing
+       "fresh" is the right answer, because USDA writes that food as
+       "Strawberries, raw" and does not use the word fresh at all.
+
+       So the last word counts triple. Requiring every word outright
+       would exclude the very row the person wanted, every time their
+       adjective is not the one the database happens to use. */
+    var hit = 0, total = 0;
+    for (var i = 0; i < queryWords.length; i++) {
+      var weight = (i === queryWords.length - 1) ? 3 : 1;
+      total += weight;
+      for (var j = 0; j < nameWords.length; j++) {
+        if (sameWord(nameWords[j], queryWords[i])) { hit += weight; break; }
+      }
+    }
+    score += total ? (24 * hit / total) : 0;
+
+    /* USDA descriptions lead with the head noun — "Strawberries, raw",
+       "Yogurt, Greek, plain". A query word in front means the row is
+       ABOUT that food rather than merely containing it. */
+    for (var k = 0; k < queryWords.length; k++) {
+      if (sameWord(nameWords[0], queryWords[k])) { score += 8; break; }
+    }
+
+    var type = String(row.dataType || '').toLowerCase();
+    score += (DATA_TYPE_BONUS[type] === undefined ? 0 : DATA_TYPE_BONUS[type]);
+
+    /* Name a brand and you get the brand. Without this the generic
+       always wins, which is wrong when somebody typed "Chobani".
+
+       Deliberately small. A brand called "Fresh Choices" matches the
+       word "fresh" in "fresh strawberries" and is not what anybody
+       meant by it; six points lets a named brand win a close race
+       without letting a coincidence beat a curated whole food. */
+    var brand = String(row.brandName || row.brandOwner || '').toLowerCase();
+    if (brand) {
+      for (var b = 0; b < queryWords.length; b++) {
+        if (brand.indexOf(queryWords[b]) >= 0) { score += 6; break; }
+      }
+    }
+
+    /* Every extra word is a qualifier, and things get more qualified
+       the more has been done to them. "Strawberries, raw" over
+       "Strawberry cheesecake parfait with fresh strawberries". */
+    var extra = Math.max(0, nameWords.length - queryWords.length);
+    score -= 0.6 * extra;
+    score -= 2 * (desc.split(',').length - 1);
+    /* A whisker per character, to separate rows that are otherwise
+       identical. "Oatmeal, NFS" and "Oatmeal, multigrain" score the
+       same on every count above; the plain one is the shorter one, and
+       plain is what somebody typing one word meant. */
+    score -= 0.02 * desc.length;
+
+    return score;
+  }
+
+  /* Pure: takes the rows rather than fetching them, so the ordering is
+     testable without a key or a network. */
+  function rankUSDA(rows, query) {
+    var queryWords = words(query);
+    if (!queryWords.length) return (rows || []).slice();
+    var queryNorm = queryWords.join(' ');
+    return (rows || [])
+      .map(function (r, i) { return { r: r, i: i, s: usdaScore(r, queryWords, queryNorm) }; })
+      .filter(function (x) { return x.s > -Infinity; })
+      .sort(function (a, b) {
+        if (a.s !== b.s) return b.s - a.s;
+        /* USDA's own order breaks ties, so a tie is never arbitrary. */
+        return a.i - b.i;
+      })
+      .map(function (x) { return x.r; });
+  }
+
+  /* Survey (FNDDS) is in both lists because it is the only one of the
+     four that has heard of oatmeal. */
+  var ALL_TYPES = 'Foundation,SR Legacy,Survey (FNDDS),Branded';
+  var WHOLE_TYPES = 'Foundation,SR Legacy,Survey (FNDDS)';
+
+  /* Asked for wide and cut down here. USDA's own relevance decides
+     which fifty come back, and fifty is enough for the ranking above
+     to have something to work with; twelve was USDA's top twelve and
+     nothing else, which is the same as having no ranking at all. */
+  var SEARCH_PAGE = 50;
+
   function searchFoods(query, opts) {
     var q = String(query || '').trim();
     if (!q) return Promise.resolve([]);
@@ -474,15 +656,60 @@ var FoodAPI = (function () {
         'Search needs a free USDA key. Setup → Food lookup, or fdc.nal.usda.gov/api-key-signup.html'));
     }
     var limit = (opts && opts.limit) || 12;
-    var url = USDA_BASE + '/foods/search?query=' + encodeURIComponent(q) +
-      '&pageSize=' + limit +
-      '&dataType=' + encodeURIComponent('Foundation,SR Legacy,Branded') +
-      '&api_key=' + encodeURIComponent(key);
-    return getJSON(url).then(function (j) {
-      var foods = (j && j.foods) || [];
+
+    /* One pass failing must not take the other down with it — but the
+       reason has to survive, because "USDA rejected the API key" and
+       "USDA has never heard of bread" send a person to completely
+       different places. */
+    var failure = null;
+    function ask(types, requireAll) {
+      return getJSON(USDA_BASE + '/foods/search?query=' + encodeURIComponent(q) +
+        '&pageSize=' + SEARCH_PAGE +
+        (requireAll ? '&requireAllWords=true' : '') +
+        '&dataType=' + encodeURIComponent(types) +
+        '&api_key=' + encodeURIComponent(key)).catch(function (e) {
+          if (!failure) failure = e;
+          return null;
+        });
+    }
+
+    /* TWO PASSES, AND BOTH ARE NECESSARY.
+
+       Precision: every word required, across all four sets. This is
+       what finds a brand, and what stops "fresh" alone dragging in
+       every herb USDA holds.
+
+       Recall: the same words, ORed, but over the curated sets only.
+       This is the pass that has to exist, and the reason is exact:
+       "fresh strawberries" with every word required returns no whole
+       food at all, because USDA does not use the word "fresh" — it
+       says "raw". Requiring a word the database does not speak
+       excludes the very row the person wanted. Dropping Branded from
+       this pass is what keeps it useful: fifty rows drawn from twenty
+       thousand curated foods will contain the strawberry, fifty drawn
+       from two million products will not.
+
+       Then both are ranked together and the best of either wins. */
+    return Promise.all([ask(ALL_TYPES, true), ask(WHOLE_TYPES, false)]).then(function (both) {
+      var seen = {}, foods = [];
+      both.forEach(function (j) {
+        ((j && j.foods) || []).forEach(function (row) {
+          var id = String(row && row.fdcId || '');
+          /* The same food from both passes is one food. */
+          if (id && seen[id]) return;
+          if (id) seen[id] = 1;
+          foods.push(row);
+        });
+      });
+      if (!foods.length && both[0] === null && both[1] === null) {
+        throw failure || new Error('USDA did not answer. Try again in a moment.');
+      }
+      return foods;
+    }).then(function (foods) {
+      var ranked = rankUSDA(foods, q);
       var out = [];
-      for (var i = 0; i < foods.length; i++) {
-        var f = fromUSDA(foods[i]);
+      for (var i = 0; i < ranked.length && out.length < limit; i++) {
+        var f = fromUSDA(ranked[i]);
         if (f) out.push(f);
       }
       return out;
@@ -501,6 +728,7 @@ var FoodAPI = (function () {
     normalizeBarcode: normalizeBarcode, barcodeVariants: barcodeVariants,
     fromOFF: fromOFF, fromUSDA: fromUSDA, atGrams: atGrams,
     offName: offName, usdaName: usdaName,
+    rankUSDA: rankUSDA, usdaWords: words, usdaStem: stem,
     /* network */
     lookupBarcode: lookupBarcode, usdaBarcodeLookup: usdaBarcodeLookup, searchFoods: searchFoods,
     usdaKey: usdaKey, setUsdaKey: setUsdaKey, hasUsdaKey: hasUsdaKey

@@ -14,7 +14,7 @@
   /* Bumped by hand on each deploy, and shown under Setup → Version.
      Its only job is to let "it still looks old" be answered with a
      number instead of a guess. Keep it in step with CACHE in sw.js. */
-  var BUILD = '2026-09-09.31';
+  var BUILD = '2026-09-10.32';
 
   /* THE HALF-DEPLOYED PAGE
 

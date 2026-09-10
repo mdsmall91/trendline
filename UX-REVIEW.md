@@ -168,11 +168,14 @@ the days that have anything in them, one tap to any of them.
 
 Reported from daily use — no need to rediscover these.
 
-**USDA search is about half useful.**
-The free food database is generic and weak on brands. When it misses, the
-routes that answer are a barcode or a pasted link. Those are now offered at
-the moment of the miss; whether the wording gets anybody to take them is
-exactly the sort of thing this review should say.
+**USDA search was worse than half useful, and has just been rebuilt.**
+The query went over as-is and USDA's default is an OR match: "fresh
+strawberries" matched 51,345 foods and answered with basil, parsley,
+peppermint, rosemary, spearmint, thyme and dill — every one on the word
+"fresh". Separately, Survey (FNDDS) was never asked, which is the only one of
+the four sets that has heard of oatmeal. Both are fixed and the results are
+now ranked locally. Judge it fresh; the old behaviour is not worth
+reproducing.
 
 **Barcode autocapture is unreliable.**
 The live camera preview often fails to catch a code. A still photo decodes far
@@ -248,4 +251,4 @@ Please don't spend time on:
 
 ---
 
-*Trendline · local-first PWA · 810 tests across 10 suites*
+*Trendline · local-first PWA · 836 tests across 10 suites*

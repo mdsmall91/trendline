@@ -207,6 +207,32 @@ are the remainder after protein and calories are settled — they land where
 they land, and colouring a day red for exceeding a number the app itself
 derived would be inventing a failure.
 
+**3b-ii. Searching USDA, and why it needed rebuilding.** The query used
+to go over as typed, and USDA's default is an OR match across every
+field it holds — so "fresh strawberries" matched 51,345 foods and came
+back with basil, parsley, peppermint, rosemary, spearmint, thyme and
+dill weed, every one of them on the word "fresh". Requiring all the
+words instead swaps that for strawberry ice cream, strawberry soda and
+strawberry licorice, because two million branded products will always
+out-supply eight thousand curated foods.
+
+So it runs two searches and ranks them together. One requires every
+word across all four datasets, which is what finds a brand. One ORs the
+words across the curated sets only, which is what finds the plain food
+— and it has to exist, because USDA does not use the word "fresh". It
+says "raw", so requiring the word the person typed would exclude the
+exact row they wanted.
+
+The ordering is then decided here rather than by USDA's relevance
+score, which does not know that somebody typing two words into a food
+log wants the food and not the confectionery named after it. The last
+word of a query counts triple, because English puts the head noun last
+and the modifiers in front of it identify nothing on their own.
+
+Survey (FNDDS) is now in the list, which is the whole reason plain
+oatmeal could not be found: Foundation and SR Legacy file it as "Oats,
+whole grain, rolled" and have no row that says oatmeal at all.
+
 **3c. One amount editor, in the unit the food is sold in.** The
 composer on the Today page is a name and a button: the common case is a
 thing you have eaten before, and it logs at the amount you usually eat
@@ -427,7 +453,7 @@ supabase/functions/     the things a browser may not do:
 SETUP.md                Supabase walkthrough
 STEPS-SHORTCUT.md       Garmin steps into the log, by hand-built Shortcut
 HEALTH-EXPORT.md        the same thing, via Health Auto Export
-tests/                  810 assertions
+tests/                  836 assertions
 ```
 
 ## Tests
@@ -435,7 +461,7 @@ tests/                  810 assertions
 ```
 node tests/tests.js          # 106 — the engine, incl. training calories
 node tests/sync-tests.js     # 101 — merge logic, wire format, session safety
-node tests/food-tests.js     # 112 — food lookup normalizers, library and recency ranking
+node tests/food-tests.js     # 138 — food lookup normalizers, library, recency and USDA ranking
 node tests/gym-tests.js      #  42 — catalog search, substitution, real loads
 node tests/progress-tests.js #  77 — e1RM, RIR, load selection, the rules
 node tests/recipe-tests.js   # 148 — reading a page or a label, declared and otherwise

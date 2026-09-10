@@ -410,6 +410,157 @@
     Store.dayNumber('2026-11-02') - Store.dayNumber('2026-11-01') === 1);
   check('a bad key has no day number', Store.dayNumber('2026-9-9') === null);
 
+  /* ---------- ranking what USDA sends back ----------
+
+     The rows below are real. The eight herbs are what
+     query="fresh strawberries" actually returned on 2026-09-09 with
+     the parameters the app used to send; the eight branded products
+     are what the same query returned once every word was required.
+     Neither list contains a strawberry anybody would eat, which is the
+     bug in two halves.
+
+     rankUSDA is pure — it takes the rows rather than fetching them —
+     so the ordering is tested without a key or a network. */
+
+  function row(dataType, description, brandName, fdcId) {
+    return { dataType: dataType, description: description,
+             brandName: brandName || undefined, fdcId: fdcId || (Math.random() * 1e9 | 0) };
+  }
+
+  /* Verbatim from the OR pass. */
+  var HERBS = [
+    row('SR Legacy', 'Basil, fresh'),
+    row('SR Legacy', 'Parsley, fresh'),
+    row('SR Legacy', 'Peppermint, fresh'),
+    row('SR Legacy', 'Rosemary, fresh'),
+    row('SR Legacy', 'Spearmint, fresh'),
+    row('SR Legacy', 'Thyme, fresh'),
+    row('SR Legacy', 'Dill weed, fresh'),
+    row('SR Legacy', 'Cheese, fresh, queso fresco')
+  ];
+
+  /* Verbatim from the requireAllWords pass. */
+  var BRANDED_STRAWBERRY = [
+    row('Branded', 'YOGURT PARFAIT WITH FRESH STRAWBERRIES, FRESH STRAWBERRIES', 'TAYLOR FARMS'),
+    row('Branded', 'FRESH STRAWBERRY CRUSHED FRUIT BARS, FRESH STRAWBERRY', 'SOLERO'),
+    row('Branded', 'FRESH STRAWBERRY PREMIUM ICE CREAM, FRESH STRAWBERRY', 'FAT BOY'),
+    row('Branded', 'FRESH STRAWBERRY PRESERVES', 'HANDSOME BROOK FARM'),
+    row('Branded', 'FRESH CHOICES, STRAWBERRY SODA, STRAWBERRY, STRAWBERRY', 'FRESH CHOICES'),
+    row('Branded', 'STRAWBERRY FRESH DOUGHNUTS SHORTCAKE, STRAWBERRY', 'THE BAKERY AT FOOD CITY'),
+    row('Branded', 'LUCKY COUNTRY, SOFT LICORICE CANDY, FRESH STRAWBERRY, FRESH STRAWBERRY', 'LUCKY COUNTRY'),
+    row('Branded', 'STRAWBERRY CHEESECAKE PARFAIT WITH FRESH STRAWBERRIES, STRAWBERRY CHEESECAKE', 'N/A')
+  ];
+
+  /* The row a person typing "fresh strawberries" wants. It is in the
+     curated pass and in neither of the two above, which is why the
+     search runs both. */
+  var RAW_STRAWBERRIES = row('SR Legacy', 'Strawberries, raw');
+
+  function top(rows, q) {
+    var r = FoodAPI.rankUSDA(rows, q);
+    return r.length ? r[0].description : '';
+  }
+
+  var mixed = HERBS.concat(BRANDED_STRAWBERRY).concat([RAW_STRAWBERRIES]);
+
+  check('the fruit beats the herbs and the ice cream',
+    top(mixed, 'fresh strawberries') === 'Strawberries, raw', top(mixed, 'fresh strawberries'));
+  check('and beats them on the single word too',
+    top(mixed, 'strawberries') === 'Strawberries, raw', top(mixed, 'strawberries'));
+
+  /* The specific failure that was reported: matching on the first word
+     alone and answering with herbs. */
+  var firstFive = FoodAPI.rankUSDA(mixed, 'fresh strawberries').slice(0, 5)
+    .map(function (r) { return r.description; });
+  check('no herb survives into the top five',
+    firstFive.filter(function (d) { return /Basil|Parsley|Thyme|Rosemary|Spearmint|Peppermint|Dill/.test(d); }).length === 0,
+    firstFive.join(' | '));
+
+  /* Whole foods over the product catalogue, but not blindly: name a
+     brand and the brand is what you meant. */
+  var yog = [
+    row('SR Legacy', 'Yogurt, Greek, plain, nonfat'),
+    row('Branded', 'CHOBANI, GREEK YOGURT, PLAIN', 'CHOBANI')
+  ];
+  check('a generic query prefers the curated food',
+    top(yog, 'greek yogurt') === 'Yogurt, Greek, plain, nonfat', top(yog, 'greek yogurt'));
+  check('naming the brand gets the brand',
+    top(yog, 'chobani greek yogurt') === 'CHOBANI, GREEK YOGURT, PLAIN',
+    top(yog, 'chobani greek yogurt'));
+
+  /* Oatmeal. Foundation and SR Legacy file the ingredient under oats
+     and have no row that says "oatmeal" at all, which is why plain
+     oatmeal could not be found until Survey (FNDDS) was asked. */
+  var oats = [
+    /* USDA's own order, which put multigrain first. */
+    row('Survey (FNDDS)', 'Oatmeal, multigrain'),
+    row('Survey (FNDDS)', 'Oatmeal, NFS'),
+    row('SR Legacy', 'Bread, oatmeal'),
+    row('Survey (FNDDS)', 'Cookie, oatmeal'),
+    row('Survey (FNDDS)', 'Crackers, oatmeal'),
+    row('Branded', 'OATMEAL RAISIN COOKIES, OATMEAL RAISIN', 'A BAKERY')
+  ];
+  check('plain oatmeal comes first', top(oats, 'oatmeal') === 'Oatmeal, NFS', top(oats, 'oatmeal'));
+  check('the biscuit does not',
+    FoodAPI.rankUSDA(oats, 'oatmeal')[0].description.indexOf('Cookie') < 0);
+
+  /* The head noun carries the row. "Bread, oatmeal" is bread. */
+  check('a food named after the query beats a food containing it',
+    FoodAPI.rankUSDA(oats, 'oatmeal').slice(0, 2)
+      .every(function (r) { return r.description.indexOf('Oatmeal') === 0; }),
+    FoodAPI.rankUSDA(oats, 'oatmeal').slice(0, 2).map(function (r) { return r.description; }).join(' | '));
+
+  /* Exactly what was typed wins outright, whatever else is going on. */
+  var exact = [
+    row('Branded', 'BANANA BREAD, BANANA', 'SOMEONE'),
+    row('SR Legacy', 'Bananas, raw'),
+    row('Foundation', 'Banana')
+  ];
+  check('an exact name match wins', top(exact, 'banana') === 'Banana', top(exact, 'banana'));
+
+  /* Plurals and singulars are the same word to a person. */
+  check('a plural query finds a singular name',
+    top([row('Foundation', 'Strawberry'), row('Branded', 'STRAWBERRY SODA', 'X')], 'strawberries')
+      === 'Strawberry');
+
+  check('ranking is stable when nothing separates two rows',
+    FoodAPI.rankUSDA([row('SR Legacy', 'Milk, whole', null, 1),
+                      row('SR Legacy', 'Milk, whole', null, 2)], 'milk whole')
+      .map(function (r) { return r.fdcId; }).join(',') === '1,2');
+
+  check('an empty query keeps USDA order rather than inventing one',
+    FoodAPI.rankUSDA(HERBS, '').length === HERBS.length);
+  check('no rows is no rows', FoodAPI.rankUSDA([], 'anything').length === 0);
+  check('null rows are safe', FoodAPI.rankUSDA(null, 'anything').length === 0);
+  check('a row with no description is dropped rather than rendered',
+    FoodAPI.rankUSDA([{ dataType: 'Branded' }, row('Foundation', 'Egg')], 'egg').length === 1);
+  check('punctuation in the query does not break the match',
+    top([row('Foundation', 'Egg, whole, raw')], "egg's!") === 'Egg, whole, raw');
+
+  /* The stemmer, which exists for one reason: "strawberries" and
+     "strawberry" share no prefix, and a person types the plural. */
+  check('an -ies plural becomes its singular', FoodAPI.usdaStem('strawberries') === 'strawberry');
+  check('so does berries', FoodAPI.usdaStem('berries') === 'berry');
+  check('a plain -s plural loses it', FoodAPI.usdaStem('oats') === 'oat');
+  check('an -es plural loses its s', FoodAPI.usdaStem('cheeses') === 'cheese',
+    FoodAPI.usdaStem('cheeses'));
+  check('an -oes plural stems close enough to match its singular',
+    FoodAPI.usdaStem('tomatoes').indexOf(FoodAPI.usdaStem('tomato')) === 0,
+    FoodAPI.usdaStem('tomatoes'));
+  check('a word ending in ss keeps both', FoodAPI.usdaStem('cress') === 'cress');
+  check('a three-letter word is left alone', FoodAPI.usdaStem('gas') === 'gas');
+  check('a singular is unchanged', FoodAPI.usdaStem('strawberry') === 'strawberry');
+
+  /* Prefix matching after stemming is what lets "tomatoes" find
+     "tomato", and it also makes "oats" match "oatmeal" — those two
+     score identically and USDA's own order decides, which is the
+     honest outcome rather than a preference this app invented. */
+  var oatish = [row('SR Legacy', 'Oats, rolled'), row('Foundation', 'Oatmeal, NFS')];
+  check('a tie between related foods keeps USDA order',
+    top(oatish, 'oats') === 'Oats, rolled', top(oatish, 'oats'));
+  check('and the other way round',
+    top([oatish[1], oatish[0]], 'oats') === 'Oatmeal, NFS');
+
   var summary = { passes: passes, failures: failures.length, detail: failures };
   root.__results = summary;
   if (typeof document !== 'undefined') {
