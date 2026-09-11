@@ -326,8 +326,13 @@ Deno.serve(async (req: Request) => {
   if (req.method === 'GET' || req.method === 'HEAD') {
     return new Response(req.method === 'HEAD' ? null : JSON.stringify({
       ok: true, service: 'trendline-plate',
-      expects: 'POST { image, mediaType, mode? } or { text, url }',
-      modes: ['plate', 'label', 'page'],
+      expects: 'POST { image, mediaType, mode? }, { text, url }, or { mode: insight, findings }',
+      /* Listed so a deploy can be checked from outside without a
+         token. "Did the new version land" is otherwise unanswerable
+         until somebody signs in and tries the feature, which is a slow
+         way to discover you are still running last week's copy. */
+      modes: ['plate', 'label', 'page', 'insight'],
+      contract: 3,
     }), { status: 200, headers: { ...CORS, 'Content-Type': 'application/json' } });
   }
   if (req.method !== 'POST') return json({ error: 'POST an image.' }, 405);
