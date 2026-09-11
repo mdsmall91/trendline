@@ -634,58 +634,35 @@ code {
 
 
 /* =============================================================
-   QUICK ADD
+   WHAT IS WORKING
 
-   The foods you eat, at the amount you eat them, one tap each. Two
-   columns rather than a scrolling row: a horizontal strip hides half
-   its contents behind a gesture, and the whole point is that the thing
-   you want is visible without looking for it.
+   One to three findings under the calorie number. The sentence leads;
+   the evidence under it is smaller but never hidden, because the day
+   counts are what separate this from a horoscope.
 
-   Each is two controls in one frame. The wide half logs; the narrow
-   half opens the amount editor. Splitting them is what keeps the
-   common case free without giving up the precise one.
+   A finding that helps and one that hurts are told apart by a rule on
+   the left rather than by colouring the text: the claim is the same
+   strength either way, and only the direction differs.
    ============================================================= */
 
-/* One column, not two.
-
-   Two columns fit six foods in half the height and truncated every
-   name that mattered: "Slow cook…", "Everything…", "Greek yog…".
-   A strip whose whole purpose is recognition cannot afford to hide
-   the half of the word that distinguishes one bowl from another, so
-   the names get the full width and the list gets four entries. The
-   fifth onward are two letters away in the box underneath. */
-.quickstrip { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s-2); }
-.qa {
-  display: flex; align-items: stretch;
-  border: var(--hairline); border-radius: var(--radius);
-  background: var(--paper); overflow: hidden;
+.finding {
+  padding: var(--s-3) 0 var(--s-3) var(--s-3);
+  border-left: 2px solid var(--border);
+  border-bottom: 1px solid var(--border);
 }
-.qa-log {
-  flex: 1; min-width: 0; min-height: 44px;
-  display: flex; align-items: center; gap: var(--s-3);
-  text-align: left; background: none; border: 0;
-  padding: 6px var(--s-3); color: inherit; font: inherit; cursor: pointer;
+.finding:last-child { border-bottom: 0; padding-bottom: 0; }
+.finding:first-child { padding-top: 0; }
+.finding.helps { border-left-color: var(--accent); }
+.finding.hurts { border-left-color: var(--warn); }
+.finding p { margin: 0; }
+.finding .said { font-size: 0.9375rem; line-height: 1.4; color: var(--text); }
+.finding .context {
+  font-size: 0.8125rem; line-height: 1.45; color: var(--text-muted); margin-top: var(--s-2);
 }
-.qa-log b {
-  flex: 1; min-width: 0;
-  font-size: 0.9375rem; font-weight: 500; line-height: 1.25;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.qa-log small {
-  flex: 0 0 auto;
+.finding .evidence {
   font-family: var(--font-mono); font-size: 0.6875rem;
-  font-variant-numeric: tabular-nums; color: var(--text-muted);
-  white-space: nowrap;
+  font-variant-numeric: tabular-nums; color: var(--text-faint); margin-top: var(--s-2);
 }
-.qa-log:hover { background: var(--surface-2); }
-.qa-log:hover b { color: var(--accent); }
-.qa-edit {
-  flex: 0 0 44px; min-height: 44px;
-  background: none; border: 0; border-left: var(--hairline);
-  color: var(--text-faint); font: inherit; font-size: 0.9375rem; cursor: pointer;
-}
-.qa-edit:hover { color: var(--accent); background: var(--surface-2); }
-
 
 /* =============================================================
    WHERE A SEARCH RUNS OUT

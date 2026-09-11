@@ -135,9 +135,15 @@ most likely to be logged right now, then Food, then macros, weight, water,
 micronutrients, habits, note. Weight folds to one line once it is in.
 Water shows two quick amounts with the rest behind *More*.
 
-**Quick add is the primary route.** One tap logs a food at the amount it
-is usually logged in, with an *Added · Undo* line. The pencil beside it
-opens the amount editor.
+**The slot under the budget now holds findings, not foods.** One to
+three of them: which of the things you do travel with the trend
+actually moving. The app computes them and refuses most of them; the
+model only writes the survivors into a sentence.
+
+**One-tap logging moved into the composer.** Tap the food box while it
+is empty and your usual foods appear beneath it, same one-tap rows and
+the same pencil for the amount. It costs one tap more than the strip
+did, which is the trade for the slot.
 
 **The `+` is now a labelled button** reading *Add food another way*. The
 five-route sheet behind it is unchanged.
@@ -251,4 +257,4 @@ Please don't spend time on:
 
 ---
 
-*Trendline · local-first PWA · 836 tests across 10 suites*
+*Trendline · local-first PWA · 864 tests across 11 suites*

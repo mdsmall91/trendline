@@ -207,6 +207,40 @@ are the remainder after protein and calories are settled — they land where
 they land, and colouring a day red for exceeding a number the app itself
 derived would be inventing a failure.
 
+**3a-ii. What is working.** The slot under the calorie number holds one
+to three findings: of the things you do, which ones travel with the
+trend actually moving. Water goals met, days trained, protein hit,
+calories under target, a habit ticked, steps above your own middle, and
+weighing yourself at all.
+
+The app decides what is true and the model only writes it down. For
+every day with a trend weight, the trend movement over the week centred
+on that day is the outcome; the days a behaviour happened are compared
+against the days it did not. Centred rather than forward-looking
+because a forward window **inverts** on anything with a weekly rhythm —
+do a thing every other week and the seven days after each of those days
+are mostly the week you did not do it.
+
+Then the refusals, which are the feature. A behaviour needs enough days
+on both sides *and* enough separate calendar weeks, so one fortnight of
+unusual discipline cannot manufacture a habit that works. The
+difference has to clear a floor well above the wobble of an EWMA trend.
+Interpolated trend values more than four days from a real weigh-in are
+not used at all. Everything else returns nothing, and the card says
+which of those walls it hit rather than going blank.
+
+No p-value is computed, because one would be wrong: the windows overlap,
+so consecutive days are not independent observations. Nothing is ever
+called a cause. The card says *associations, not causes* and the day
+counts sit under every line.
+
+Only the findings go to the model — never the log. It is handed the
+comparison the app already made and told to write one sentence, with at
+most one clause of established background, and forbidden from
+introducing a number. Which is why the card works signed out and
+offline: the findings are computed on the device and read perfectly
+well in the app's own words. The prose is the decoration.
+
 **3b-ii. Searching USDA, and why it needed rebuilding.** The query used
 to go over as typed, and USDA's default is an OR match across every
 field it holds — so "fresh strawberries" matched 51,345 foods and came
@@ -421,6 +455,8 @@ config.js               your Supabase URL + anon key (empty = sync off,
 js/core.js              the engine. Pure functions, no DOM, no storage.
 js/store.js             local-first storage, v1 migration, dirty tracking
 js/sync.js              merge logic + Supabase REST/auth over plain fetch
+js/insight.js           what travels with progress. Pure; the refusals
+                        are the feature. See tests/insight-tests.js.
 js/foodapi.js           Open Food Facts + USDA normalizers and lookups
 js/recipe.js            reads schema.org Recipe nutrition out of a page's
                         structured data. Pure; the fetching is an Edge Function
@@ -453,7 +489,7 @@ supabase/functions/     the things a browser may not do:
 SETUP.md                Supabase walkthrough
 STEPS-SHORTCUT.md       Garmin steps into the log, by hand-built Shortcut
 HEALTH-EXPORT.md        the same thing, via Health Auto Export
-tests/                  836 assertions
+tests/                  864 assertions
 ```
 
 ## Tests
@@ -468,6 +504,7 @@ node tests/recipe-tests.js   # 148 — reading a page or a label, declared and o
 node tests/units-tests.js    #  63 — unit conversion, and what it refuses
 node tests/micro-tests.js    #  69 — micronutrients, units, and coverage
 node tests/plate-tests.js    #  44 — reading a photographed meal, and what it drops
+node tests/insight-tests.js  #  28 — what travels with progress, and what it refuses to say
 ```
 
 Or open any of the `tests/*.html` pages in a browser, which is the only

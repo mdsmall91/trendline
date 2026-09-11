@@ -14,7 +14,7 @@
   /* Bumped by hand on each deploy, and shown under Setup → Version.
      Its only job is to let "it still looks old" be answered with a
      number instead of a guess. Keep it in step with CACHE in sw.js. */
-  var BUILD = '2026-09-10.32';
+  var BUILD = '2026-09-10.33';
 
   /* THE HALF-DEPLOYED PAGE
 
@@ -42,8 +42,13 @@
      Once only, and recorded in sessionStorage rather than attempted
      again: a reload loop against a genuinely broken deploy is worse
      than the broken deploy, because it takes away the screen you would
-     have read the problem off. */
-  if (!$('quickAddCard')) {
+     have read the problem off.
+
+     The element named below has to exist in the CURRENT markup and be
+     one this file would not work without. It was #quickAddCard until
+     that card was replaced by the insight card; a guard pointing at
+     something since deleted is a reload loop that ships silently. */
+  if (!$('insightCard')) {
     var RELOADED = 'tl.staleShell';
     var tried = false;
     try { tried = !!sessionStorage.getItem(RELOADED); } catch (e) {}
@@ -189,7 +194,7 @@
      TODAY
      --------------------------------------------------------------- */
 
-  var recentAll = [], recentIndex = {}, quickRows = [], pickRows = [];
+  var recentAll = [], recentIndex = {}, pickRows = [];
   var weightOpen = false;
 
   function renderToday(D) {
@@ -259,7 +264,8 @@
     $('weightDoneVal').textContent = weighed ? fmt(d.weight, 1) + ' lb' : '';
     $('weightForm').hidden = weighed && !weightOpen;
 
-    renderQuickAdd();
+    renderInsights(D);
+
 
     var log = $('foodLog');
     if (!lines.length) {
@@ -424,63 +430,194 @@
   }
 
   /* ---------------------------------------------------------------
-     QUICK ADD
+     WHAT IS WORKING
 
-     Up to six foods, each showing the amount it is usually eaten in
-     and what that comes to. The wide half of each logs it; the narrow
-     half opens the amount editor, for the day it was not the usual
-     amount.
+     The analysis lives in js/insight.js and is pure. This assembles
+     the days it reads, renders what comes back, and — only when there
+     is something worth a sentence and an account to run it on — asks
+     the model to write it up.
+
+     Every finding renders without the model. The prose is an
+     improvement on the wording, never the source of the claim, so a
+     gym basement with no signal loses nothing but polish.
      --------------------------------------------------------------- */
 
-  function renderQuickAdd() {
-    /* Four. Six fitted only in two columns, and two columns truncated
-       every name long enough to need reading. */
-    quickRows = recentAll.slice(0, 4);
-    $('quickAddCard').hidden = !quickRows.length;
-    if (!quickRows.length) return;
+  var insightState = { findings: [], prose: null, busy: false, error: '' };
 
-    $('quickAdd').innerHTML = quickRows.map(function (r, i) {
-      var kcal = (r.food.kcal === null || r.food.kcal === undefined)
-        ? null : r.food.kcal * r.qty;
-      var sub = amountLabel(r.amount, r.unit, r.qty) +
-        (kcal === null ? '' : '  ·  ' + fmt(kcal) + ' cal');
-      return '<div class="qa">' +
-        '<button class="qa-log" data-quick="' + i + '">' +
-          '<b>' + esc(r.name) + '</b><small>' + esc(sub) + '</small></button>' +
-        '<button class="qa-edit" data-quick-edit="' + i + '" aria-label="Change the amount of ' +
-          esc(r.name) + '">&#9998;</button>' +
+  /* Written once, kept until the findings themselves change. There is
+     no reason to spend a call, or a second of somebody's morning, on
+     rewording a conclusion that has not moved. */
+  (function () {
+    var saved = Store.settings().insightProse;
+    if (saved && saved.key && saved.insights) insightState.prose = saved;
+  })();
+
+  /* One record per day the log knows about, in the shape insight.js
+     asks for. Built from the same engine data everything else reads. */
+  function insightDays(D) {
+    var goal = num0(Store.settings().waterGoalOz, 64);
+    var seen = {}, keys = [];
+    Object.keys(D.engine).forEach(function (k) { seen[k] = 1; });
+    Store.loggedDates().forEach(function (k) { seen[k] = 1; });
+    D.series.forEach(function (p) { seen[p.date] = 1; });
+    keys = Object.keys(seen).sort();
+    if (!keys.length) return [];
+
+    /* Every day between the first and last, so a gap is a day with
+       nothing on it rather than a day that does not exist. */
+    var all = [], cursor = keys[0], last = keys[keys.length - 1], guard = 0;
+    while (cursor <= last && guard++ < 2000) { all.push(cursor); cursor = WL.addDays(cursor, 1); }
+
+    return all.map(function (k) {
+      var e = D.engine[k] || {};
+      var food = e.food || [];
+      var totals = WL.entryTotals({ food: food });
+      var trained = Store.workoutsFor(k).length > 0;
+      return {
+        date: k,
+        trend: D.series.length ? WL.trendAt(D.series, k) : null,
+        weighed: typeof e.weight === 'number',
+        logged: food.length > 0,
+        kcal: food.length ? totals.kcal : null,
+        target: D.hasWeight ? D.target.target : null,
+        protein: food.length ? totals.protein : null,
+        proteinTarget: D.hasWeight ? D.macros.protein : null,
+        water: Store.waterOn(k),
+        waterGoal: goal,
+        steps: Store.stepsOn(k),
+        trained: trained,
+        habits: e.habits || {}
+      };
+    });
+  }
+
+  /* The sentence the app writes for itself. Deliberately flat: it
+     states the comparison and nothing else, and it is what shows when
+     there is no account, no signal, or no reason to spend a call. */
+  function plainSentence(f) {
+    var size = fmt(Math.abs(f.effect), 2) + ' lb a week';
+    return 'On the days you ' + f.label + ', the trend moved ' + size +
+      (f.helps ? ' further toward your goal.' : ' further away from it.');
+  }
+
+  function evidenceLine(f) {
+    return f.n.on + ' days on, ' + f.n.off + ' off, across ' +
+      Math.max(f.weeks.on, f.weeks.off) + ' weeks' +
+      (f.note ? '  ·  ' + f.note : '') + '.';
+  }
+
+  function renderInsights(D) {
+    var body = $('insightBody'), note = $('insightNote');
+
+    if (!D.hasWeight) {
+      body.innerHTML = '<p class="empty">Nothing to compare yet. This needs weigh-ins.</p>';
+      note.textContent = '';
+      $('insightRefresh').hidden = true;
+      return;
+    }
+
+    var res = Insight.observe({
+      days: insightDays(D),
+      habitNames: Store.habits().reduce(function (m, h) { m[h.id] = h.name; return m; }, {}),
+      goalRateLbPerWk: Store.settings().goalRateLbPerWk
+    });
+    insightState.findings = res.findings.slice(0, 3);
+    $('insightRefresh').hidden = !insightState.findings.length;
+
+    if (!insightState.findings.length) {
+      /* A refusal, written as one. There is a difference between "no
+         pattern" and "not enough to look", and the person can act on
+         the second. */
+      body.innerHTML = '<p class="empty">Nothing separates itself yet.</p>';
+      /* "What would help" is only worth saying when something would.
+         A flat result is an answer, not a shortage. */
+      note.textContent = res.shortfall.detail +
+        (res.shortfall.kind === 'flat' ? '' : ' What would help: ' + res.shortfall.need + '.');
+      return;
+    }
+
+    var prose = {};
+    if (insightState.prose && insightState.prose.key === proseKey(insightState.findings)) {
+      (insightState.prose.insights || []).forEach(function (i) { prose[i.id] = i; });
+    }
+
+    body.innerHTML = insightState.findings.map(function (f) {
+      var written = prose[f.id];
+      return '<div class="finding' + (f.helps ? ' helps' : ' hurts') + '">' +
+        '<p class="said">' + esc(written && written.headline ? written.headline : plainSentence(f)) + '</p>' +
+        (written && written.context
+          ? '<p class="context">' + esc(written.context) + '</p>' : '') +
+        '<p class="evidence">' + esc(evidenceLine(f)) + '</p>' +
         '</div>';
     }).join('');
+
+    /* Short, and staying. It is the line that keeps this card from
+       being a horoscope, and the day counts above it are the proof. */
+    note.textContent = insightState.busy
+      ? 'Writing these up…'
+      : (insightState.error || 'Associations, not causes.');
   }
 
-  $('quickAdd').addEventListener('click', function (ev) {
-    var log = ev.target.closest('[data-quick]');
-    if (log) {
-      var r = quickRows[Number(log.dataset.quick)];
-      if (r) logFood(r.food, r.amount, r.unit, r.qty);
-      return;
-    }
-    var ed = ev.target.closest('[data-quick-edit]');
-    if (ed) {
-      var q = quickRows[Number(ed.dataset.quickEdit)];
-      if (q) openAmountForFood(q.food, q.amount, q.unit);
-      return;
-    }
-  });
-
-  /* Past the fourth food, the composer below is the list of the rest:
-     it matches anywhere in a name, not just the start, and it is two
-     letters away. A second scrolling list of the same foods would be
-     the same information twice. */
-  $('quickMore').addEventListener('click', function () {
-    scrollToEl('foodPick');
-    $('foodPick').focus();
-  });
-
-  function scrollToEl(id) {
-    try { $(id).scrollIntoView({ block: 'center', behavior: 'smooth' }); }
-    catch (e) { $(id).scrollIntoView(); }
+  /* A signature for the findings, so cached prose is never shown
+     against numbers it was not written for. */
+  function proseKey(findings) {
+    return findings.map(function (f) {
+      return f.id + ':' + fmt(f.effect, 2) + ':' + f.n.on + '/' + f.n.off;
+    }).join('|');
   }
+
+  /* The model half. Only the findings travel — never the log. */
+  function writeUpInsights(force) {
+    if (insightState.busy || !insightState.findings.length) return;
+    var key = proseKey(insightState.findings);
+    if (!force && insightState.prose && insightState.prose.key === key) return;
+
+    var c = (typeof CONFIG !== 'undefined' && CONFIG) || {};
+    if (!c.SUPABASE_URL || typeof Sync === 'undefined' || !Sync.signedIn()) return;
+
+    insightState.busy = true;
+    insightState.error = '';
+    $('insightNote').textContent = 'Writing these up…';
+
+    var payload = insightState.findings.map(function (f) {
+      return {
+        id: f.id, behaviour: f.label, note: f.note || '',
+        lbPerWeekDifference: Math.round(f.effect * 100) / 100,
+        towardGoal: f.helps,
+        daysOn: f.n.on, daysOff: f.n.off,
+        weeksSpanned: Math.max(f.weeks.on, f.weeks.off)
+      };
+    });
+
+    Sync.accessToken().then(function (token) {
+      return fetch(c.SUPABASE_URL.replace(/\/+$/, '') + '/functions/v1/plate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + token,
+          'apikey': c.SUPABASE_ANON_KEY
+        },
+        body: JSON.stringify({ mode: 'insight', findings: payload })
+      });
+    }).then(function (res) {
+      return res.json().catch(function () { return {}; }).then(function (b) {
+        if (!res.ok) throw new Error(b.error || 'Could not write these up.');
+        if (!b.insights) {
+          throw new Error('The reader on your Supabase project predates this. ' +
+            'Redeploy it: supabase functions deploy plate --no-verify-jwt');
+        }
+        insightState.prose = { key: key, insights: b.insights, at: Store.now() };
+        Store.setSetting('insightProse', insightState.prose);
+      });
+    }).catch(function (e) {
+      insightState.error = String(e.message || e);
+    }).then(function () {
+      insightState.busy = false;
+      render();
+    });
+  }
+
+  $('insightRefresh').addEventListener('click', function () { writeUpInsights(true); });
 
   /* ---------------------------------------------------------------
      AS YOU TYPE
@@ -504,6 +641,24 @@
 
   function renderPick() {
     var q = $('foodPick').value.trim();
+
+    /* Empty and focused: the foods you actually eat, at the amount you
+       usually eat them, one tap each. This is the quick-add strip that
+       used to sit under the calorie number, moved to where the cursor
+       already is rather than deleted. */
+    if (!q) {
+      if (document.activeElement !== $('foodPick') || !recentAll.length) {
+        $('pickList').hidden = true; pickRows = []; return;
+      }
+      pickRows = recentAll.slice(0, 5).map(function (r) { return r.food; });
+      $('pickList').hidden = false;
+      $('pickNext').hidden = true;
+      $('pickResults').hidden = false;
+      $('pickStatus').textContent = '';
+      $('pickResults').innerHTML = pickRows.map(pickRow).join('');
+      return;
+    }
+
     if (q.length < 2) { $('pickList').hidden = true; pickRows = []; return; }
 
     pickRows = Store.searchLibrary(q, 6);
@@ -518,18 +673,31 @@
     }
 
     $('pickStatus').textContent = '';
-    $('pickResults').innerHTML = pickRows.map(function (f, i) {
-      var u = usualFor(f.id);
-      var kcal = (f.kcal === null || f.kcal === undefined) ? null : f.kcal * u.qty;
-      var sub = amountLabel(u.amount, u.unit, u.qty) +
-        ((f.kind || 'food') === 'recipe' ? '  ·  recipe' : '');
-      return '<li><button class="rowedit" data-pickrow="' + i + '">' +
-        '<span class="name"><b>' + esc(f.name) + '</b><small>' + esc(sub) + '</small></span>' +
-        '<span class="kcal">' + (kcal === null ? '—' : fmt(kcal)) + '</span></button>' +
-        '<button class="btn ghost" data-pickedit="' + i + '" aria-label="Change the amount of ' +
-        esc(f.name) + '">&#9998;</button></li>';
-    }).join('');
+    $('pickResults').innerHTML = pickRows.map(pickRow).join('');
   }
+
+  /* One row, used for the recents and for the typed matches alike:
+     they are the same thing reached two ways. */
+  function pickRow(f, i) {
+    var u = usualFor(f.id);
+    var kcal = (f.kcal === null || f.kcal === undefined) ? null : f.kcal * u.qty;
+    var sub = amountLabel(u.amount, u.unit, u.qty) +
+      ((f.kind || 'food') === 'recipe' ? '  ·  recipe' : '');
+    return '<li><button class="rowedit" data-pickrow="' + i + '">' +
+      '<span class="name"><b>' + esc(f.name) + '</b><small>' + esc(sub) + '</small></span>' +
+      '<span class="kcal">' + (kcal === null ? '—' : fmt(kcal)) + '</span></button>' +
+      '<button class="btn ghost" data-pickedit="' + i + '" aria-label="Change the amount of ' +
+      esc(f.name) + '">&#9998;</button></li>';
+  }
+
+  $('foodPick').addEventListener('focus', renderPick);
+  $('foodPick').addEventListener('blur', function () {
+    /* A moment's grace, so a tap on a row lands before the list it is
+       in disappears out from under the finger. */
+    setTimeout(function () {
+      if (document.activeElement !== $('foodPick') && !$('foodPick').value.trim()) renderPick();
+    }, 180);
+  });
 
   function clearComposer() {
     $('foodPick').value = '';

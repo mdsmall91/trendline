@@ -24,13 +24,13 @@
    no reason to re-fetch them on every launch.
    ============================================================= */
 
-var CACHE = 'trendline-v31';
+var CACHE = 'trendline-v32';
 
 var SHELL = [
   './', './index.html', './manifest.webmanifest', './icon.svg',
   './icons/apple-touch-icon.png', './config.js', './styles/app.css',
   './js/core.js', './js/store.js', './js/sync.js', './js/units.js', './js/micros.js', './js/plate.js',
-  './js/foodapi.js', './js/recipe.js',
+  './js/foodapi.js', './js/recipe.js', './js/insight.js',
   './js/scanner.js', './js/gym.js', './js/progress.js', './js/chart.js', './js/ui.js',
   './data/exercises.json', './data/workouts.json', './data/equipment.json'
 ];

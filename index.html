@@ -78,23 +78,31 @@
     <div class="hint" id="targetBasis" hidden></div>
   </div>
 
-  <!-- QUICK ADD
+  <!-- WHAT IS WORKING
 
-       Coffee and a bagel, walking, is the most common thing that
-       happens in this app, and until now it cost a name, an amount, a
-       unit and a button — twice. The foods a person eats repeat, so
-       the ones they eat often and recently sit here with the amount
-       they usually take, and one tap logs it at that amount.
+       The slot under the calorie number, which used to hold a strip of
+       four foods. One to three findings instead: of the things this
+       person does, which ones travel with the trend actually moving.
 
-       The tap commits. There is no confirm step, because a confirm on
-       the thing you do eight times a day is a toll; what you get
-       instead is a line saying what landed and an Undo beside it. -->
-  <div class="card" id="quickAddCard" hidden>
+       The app decides what is true. It compares the days a behaviour
+       happened against the days it did not, refuses every comparison
+       without enough days across enough separate weeks, and throws out
+       every difference too small to tell from noise. Only what
+       survives goes anywhere near the model, and the model only writes
+       it into a sentence — it is never asked to find anything, because
+       a model asked to find insights in health data will always find
+       some.
+
+       Which is why the card works with no account and no signal: the
+       findings are computed on the device and read perfectly well in
+       the app's own words. The prose is the decoration. -->
+  <div class="card" id="insightCard">
     <div class="row" style="align-items:center;margin-bottom:var(--s-3)">
-      <h2 style="margin:0;flex:1">Quick add</h2>
-      <button class="btn ghost grow-0 tap" id="quickMore">Find another</button>
+      <h2 style="margin:0;flex:1">What is working</h2>
+      <button class="btn ghost grow-0 tap" id="insightRefresh" title="Look again">&#8635;</button>
     </div>
-    <div class="quickstrip" id="quickAdd"></div>
+    <div id="insightBody"></div>
+    <div class="hint" id="insightNote"></div>
   </div>
 
   <div class="card">
@@ -123,6 +131,9 @@
          that matches only from the start of a name, so a recipe called
          "Slow cooker chicken tikka masala" was invisible to anyone
          typing "tikka" — which is what a person types. -->
+    <!-- Empty and focused, this is the quick-add strip that used to
+         sit under the budget: the foods you eat, at the amount you eat
+         them, one tap each. Start typing and it becomes the search. -->
     <div id="pickList" hidden style="margin-top:var(--s-3)">
       <div class="hint" id="pickStatus" style="margin-top:0"></div>
       <ul class="list" id="pickResults"></ul>
@@ -953,6 +964,7 @@
 <script src="js/units.js"></script>
 <script src="js/micros.js"></script>
 <script src="js/plate.js"></script>
+<script src="js/insight.js"></script>
 <script src="js/foodapi.js"></script>
 <script src="js/recipe.js"></script>
 <script src="js/scanner.js"></script>

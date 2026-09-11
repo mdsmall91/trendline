@@ -7,6 +7,7 @@
 //   a photograph of a plate    what is on it, and roughly how much
 //   a photograph of a label    what the panel on the back states
 //   the text of a web page     what the page states
+//   a set of findings          the same findings, written in English
 //
 // The first is an estimate and says so everywhere. The other two are
 // transcription: the numbers exist and the job is to copy them without
@@ -204,6 +205,79 @@ The page text is given to you. Report ONLY what the page states.
 - If there is no nutrition on the page at all, set found false. Do not
   reconstruct it from the ingredients.`;
 
+// Writing up findings, not producing them.
+//
+// The app has already decided what is true. It compared the days a
+// behaviour happened against the days it did not, refused every
+// comparison that lacked enough days or spanned too few separate
+// weeks, and discarded every difference too small to tell from noise.
+// What arrives here has survived all of that.
+//
+// So this prompt's only job is prose, and its main constraint is
+// negative: no new numbers, no new claims, no causal language. A model
+// invited to "find insights in health data" will always find some.
+// This one is handed the findings and told to write them down.
+const INSIGHT_TOOL = {
+  name: 'write_insights',
+  description: 'Put each supplied finding into one sentence a person can act on.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      insights: {
+        type: 'array',
+        description: 'One entry per finding supplied, in the order given. Never more.',
+        items: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', description: 'The id of the finding this is for, copied exactly.' },
+            headline: {
+              type: 'string',
+              description:
+                'One sentence, under 110 characters, stating the association in plain words. ' +
+                'Name the behaviour and the direction. Use only the figures supplied.',
+            },
+            context: {
+              type: 'string',
+              description:
+                'At most one further sentence of established background on why this behaviour ' +
+                'plausibly matters, or on why it may be coincidence. No numbers, no citations. ' +
+                'Empty if nothing useful can be said.',
+            },
+          },
+          required: ['id', 'headline'],
+        },
+      },
+    },
+    required: ['insights'],
+  },
+};
+
+const INSIGHT_SYSTEM = `You write up findings for a personal weight and food log. You do not produce findings.
+
+Each finding given to you is an ASSOCIATION the app measured between something
+the person did and how their weight trend moved. The app has already thrown out
+everything too thin, too bunched or too small to report. Your job is one
+sentence per finding, plus at most one of background.
+
+Absolute rules:
+- Use ONLY the numbers supplied. Never introduce a figure, a percentage, a
+  timescale or a comparison that is not in the finding.
+- Never write causal language. Not "because", not "leads to", not "improves".
+  These are things that happened together. "On the days you did X, the trend
+  moved faster" is the strongest form available to you.
+- Never recommend a clinical target, a medication change, or a calorie figure.
+  You are describing what the log shows, not prescribing.
+- Do not stack hedges. One honest sentence beats three apologetic ones; the app
+  prints the day counts underneath you.
+- Write to the person, as "you". No preamble, no summary line, no encouragement.
+
+The context sentence may draw on established, uncontroversial background - that
+protein intake is associated with retaining lean mass in a deficit, that regular
+self-weighing is associated with better long-term outcomes, that step count is
+the largest movable part of daily energy expenditure for most people. Keep it to
+one clause of why this is plausible, or say nothing. If a finding looks more
+likely to be coincidence than signal, saying so is the useful sentence.`;
+
 const LABEL_SYSTEM = `You read a nutrition information panel from a photograph, for a food log.
 
 This is transcription, not estimation. The numbers are printed in front of you.
@@ -272,13 +346,22 @@ Deno.serve(async (req: Request) => {
   }
 
   let image = '', mediaType = 'image/jpeg', pageText = '', pageUrl = '', mode = '';
+  let findings: unknown[] = [];
   try {
     const body = await req.json();
     pageText = String(body?.text ?? '').slice(0, 60_000);
     pageUrl = String(body?.url ?? '').slice(0, 500);
     image = String(body?.image ?? '');
     mode = String(body?.mode ?? '');
-    if (!image && !pageText) throw new Error('Nothing to read.');
+    if (mode === 'insight') {
+      /* Findings only, never the log they came from. Nothing about the
+         person's weigh-ins or meals has to leave the device for a
+         sentence to be written about a comparison already made. */
+      findings = Array.isArray(body?.findings) ? body.findings.slice(0, 3) : [];
+      if (!findings.length) throw new Error('No findings to write up.');
+    } else if (!image && !pageText) {
+      throw new Error('Nothing to read.');
+    }
     if (image) {
       mediaType = String(body?.mediaType ?? 'image/jpeg');
       if (!/^image\/(jpeg|png|webp|gif)$/.test(mediaType)) throw new Error('Unsupported image type.');
@@ -296,7 +379,8 @@ Deno.serve(async (req: Request) => {
      back in the page's shape — which the app already knows how to
      land in the add-a-food form. */
   const readingLabel = !!image && mode === 'label';
-  const readingPage = !image;
+  const writingInsights = mode === 'insight';
+  const readingPage = !image && !writingInsights;
   const readingFood = readingPage || readingLabel;
 
   const control = new AbortController();
@@ -313,12 +397,23 @@ Deno.serve(async (req: Request) => {
       body: JSON.stringify({
         model: MODEL,
         max_tokens: 2000,
-        system: readingLabel ? LABEL_SYSTEM : (readingPage ? PAGE_SYSTEM : SYSTEM),
-        tools: [readingFood ? PAGE_TOOL : TOOL],
-        tool_choice: { type: 'tool', name: readingFood ? 'record_food' : 'record_plate' },
+        system: writingInsights ? INSIGHT_SYSTEM
+          : (readingLabel ? LABEL_SYSTEM : (readingPage ? PAGE_SYSTEM : SYSTEM)),
+        tools: [writingInsights ? INSIGHT_TOOL : (readingFood ? PAGE_TOOL : TOOL)],
+        tool_choice: {
+          type: 'tool',
+          name: writingInsights ? 'write_insights'
+            : (readingFood ? 'record_food' : 'record_plate'),
+        },
         messages: [{
           role: 'user',
-          content: readingPage
+          content: writingInsights
+            ? [{
+                type: 'text',
+                text: 'Write up these findings, one sentence each:' +
+                  String.fromCharCode(10, 10) + JSON.stringify(findings, null, 2),
+              }]
+            : readingPage
             ? [{
                 type: 'text',
                 text: 'Page: ' + pageUrl + '\n\n' + pageText +
@@ -372,6 +467,15 @@ Deno.serve(async (req: Request) => {
     const block = (data.content || []).find((c: { type?: string }) => c.type === 'tool_use');
     if (!block) {
       return json({ error: 'The reader did not return a result it could use.' }, 502);
+    }
+
+    if (writingInsights) {
+      return json({
+        ok: true,
+        insights: block.input?.insights ?? [],
+        usage: data.usage ?? null,
+        model: MODEL,
+      });
     }
 
     if (readingFood) {

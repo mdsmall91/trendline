@@ -180,6 +180,7 @@ one place. The mode is chosen by what you post:
 | `{ image, mediaType }` | a plate | `items[]`, each with a portion and a confidence |
 | `{ image, mediaType, mode: 'label' }` | a nutrition panel | one `food`, per serving |
 | `{ text, url }` | a web page | one `food`, per serving |
+| `{ mode: 'insight', findings }` | findings the app already made | one sentence each |
 
 The first is an estimate and says so everywhere. The other two are transcription:
 the numbers already exist and the job is to copy them without inventing the ones
@@ -229,10 +230,25 @@ package has them printed on it.
 The result lands in the ordinary add-a-food panel, filled in rather than saved,
 like every other route — so it is checked before it counts.
 
+### Writing up findings
+
+The odd one out: nothing is read and nothing is discovered. The app has already
+compared the days a behaviour happened against the days it did not, thrown out
+every comparison too thin or too bunched, and discarded every difference too
+small to tell from noise. Only survivors are sent, and **only the findings** —
+never the log they came from. Nothing about the person's weigh-ins or meals
+leaves the device for a sentence to be written about a comparison already made.
+
+The prompt is almost entirely negative: no new numbers, no new claims, no causal
+language, no clinical advice. A model asked to find insights in health data will
+always find some, so this one is never asked. It is handed the finding and told
+to write it down, with at most one clause of established background.
+
 ### Cost
 
 One image plus a short reply to Claude Sonnet, on the order of a cent or two per
-scan at current prices. The function passes token usage back so the app can say
+scan at current prices. An insight write-up is text only and a fraction of that;
+it runs once when the findings change, not once per launch. The function passes token usage back so the app can say
 what a scan cost rather than leaving it a mystery. The photo is shrunk to 1024px
 in the browser first: a plate is recognisable at that size, and the upload is the
 slow part on a phone.
